@@ -7,7 +7,7 @@ import telegram
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
 # Thay thế bằng token bot của bạn
-BOT_TOKEN = "7550168223:AAHswDYG8ozk1QnpKSnxFo9UuNhYgCh6mco"
+BOT_TOKEN = "7766543633:AAFnN9tgGWFDyApzplak0tiJTafCxciFydo"
 
 def deviceId():
     characters = string.ascii_lowercase + string.digits
