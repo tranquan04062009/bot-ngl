@@ -4,13 +4,21 @@ import requests
 import os
 import time
 import telegram
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
 from telegram import Update
-from telegram.ext import ContextTypes
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import ConversationHandler
 
 # Thay thế bằng token bot của bạn
 BOT_TOKEN = "7766543633:AAFnN9tgGWFDyApzplak0tiJTafCxciFydo"
 
+
+# Các trạng thái cho conversation
+(
+    USERNAME,
+    MESSAGE_TEXT,
+    COUNT,
+    DELAY,
+) = range(4)
 
 def deviceId():
     characters = string.ascii_lowercase + string.digits
@@ -44,6 +52,7 @@ def Proxy():
         'https': random_proxy
     }
     return proxies
+
 
 async def send_ngl_message(nglusername, message, count, delay, update: Update, context: ContextTypes.DEFAULT_TYPE):
     value = 0
@@ -125,46 +134,81 @@ async def send_ngl_message(nglusername, message, count, delay, update: Update, c
 
     await context.bot.send_message(chat_id=update.effective_chat.id, text="Hoàn tất gửi tin nhắn!")
 
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(chat_id=update.effective_chat.id, text="Chào bạn! Hãy sử dụng lệnh /ngl để bắt đầu gửi tin nhắn.")
 
-async def ngl_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await context.bot.send_message(chat_id=update.effective_chat.id, text="Vui lòng nhập thông tin theo định dạng: \n\n/ngl <username> <tin nhắn> <số lượng> <delay (giây)>")
+async def ngl_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await context.bot.send_message(chat_id=update.effective_chat.id, text="Nhập tên người dùng NGL:")
+    return USERNAME
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-    if text.startswith('/ngl '):
-        try:
-            parts = text.split(' ', 5)
-            if len(parts) != 5:
-                await context.bot.send_message(chat_id=update.effective_chat.id, text="Định dạng không đúng. Vui lòng nhập theo định dạng: \n\n/ngl <username> <tin nhắn> <số lượng> <delay (giây)>")
-                return
-            
-            _, nglusername, message, count, delay = parts
-            count = int(count)
-            delay = float(delay)
+async def ngl_username(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    username = update.message.text
+    context.user_data['username'] = username
+    await context.bot.send_message(chat_id=update.effective_chat.id, text="Nhập tin nhắn muốn gửi:")
+    return MESSAGE_TEXT
 
-            if count <= 0 or delay < 0:
-                await context.bot.send_message(chat_id=update.effective_chat.id, text="Số lượng phải lớn hơn 0 và delay phải lớn hơn hoặc bằng 0")
-                return
-            
-            await send_ngl_message(nglusername, message, count, delay, update, context)
+async def ngl_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.message.text
+    context.user_data['message'] = message
+    await context.bot.send_message(chat_id=update.effective_chat.id, text="Nhập số lượng tin nhắn muốn gửi:")
+    return COUNT
+
+async def ngl_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        count = int(update.message.text)
+        if count <= 0:
+            await context.bot.send_message(chat_id=update.effective_chat.id, text="Số lượng phải lớn hơn 0, nhập lại:")
+            return COUNT
+
+        context.user_data['count'] = count
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="Nhập delay giữa các tin nhắn (giây):")
+        return DELAY
+    except ValueError:
+       await context.bot.send_message(chat_id=update.effective_chat.id, text="Số lượng phải là số, vui lòng nhập lại:")
+       return COUNT
+
+async def ngl_delay(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        delay = float(update.message.text)
+        if delay < 0:
+            await context.bot.send_message(chat_id=update.effective_chat.id, text="Delay phải lớn hơn hoặc bằng 0, nhập lại:")
+            return DELAY
         
-        except ValueError:
-             await context.bot.send_message(chat_id=update.effective_chat.id, text="Lỗi: Số lượng và delay phải là số.")
+        context.user_data['delay'] = delay
         
-        except Exception as e:
-            await context.bot.send_message(chat_id=update.effective_chat.id, text=f"Lỗi: {e}")
+        nglusername = context.user_data['username']
+        message = context.user_data['message']
+        count = context.user_data['count']
+        delay = context.user_data['delay']
 
-    else:
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="Vui lòng sử dụng lệnh /ngl để bắt đầu.")
+        await send_ngl_message(nglusername, message, count, delay, update, context)
+        return ConversationHandler.END
+    except ValueError:
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="Delay phải là số, vui lòng nhập lại:")
+        return DELAY
+
+async def ngl_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await context.bot.send_message(chat_id=update.effective_chat.id, text="Đã hủy gửi tin nhắn.")
+    return ConversationHandler.END
+
 
 def main():
     application = Application.builder().token(BOT_TOKEN).build()
-    
+
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("ngl", ngl_start)],
+        states={
+            USERNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, ngl_username)],
+            MESSAGE_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, ngl_message)],
+            COUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, ngl_count)],
+            DELAY: [MessageHandler(filters.TEXT & ~filters.COMMAND, ngl_delay)],
+        },
+        fallbacks=[CommandHandler("cancel", ngl_cancel)],
+    )
+
+    application.add_handler(conv_handler)
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("ngl", ngl_command))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     application.run_polling()
 
