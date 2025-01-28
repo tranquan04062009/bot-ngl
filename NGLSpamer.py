@@ -123,7 +123,7 @@ def send_ngl_message(nglusername, message, count, delay, update, context):
     context.bot.send_message(chat_id=update.effective_chat.id, text="Hoàn tất gửi tin nhắn!")
 
 def start(update, context):
-    context.bot.send_message(chat_id=update.effective_chat.id, text="Chào bạn! Hãy sử dụng lệnh /ngl để bắt đầu gửi tin nhắn.")
+    context.bot.send_message(chat_id=update.effective_chat.id, text="Hi! Hãy sử dụng lệnh /ngl để bắt đầu gửi tin nhắn.")
 
 def ngl_command(update, context):
     context.bot.send_message(chat_id=update.effective_chat.id, text="Vui lòng nhập thông tin theo định dạng: \n\n/ngl <username> <tin nhắn> <số lượng> <delay (giây)>")
