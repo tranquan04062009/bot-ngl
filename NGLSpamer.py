@@ -5,9 +5,12 @@ import os
 import time
 import telegram
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
+from telegram import Update
+from telegram.ext import ContextTypes
 
 # Thay thế bằng token bot của bạn
 BOT_TOKEN = "7766543633:AAFnN9tgGWFDyApzplak0tiJTafCxciFydo"
+
 
 def deviceId():
     characters = string.ascii_lowercase + string.digits
@@ -42,7 +45,7 @@ def Proxy():
     }
     return proxies
 
-def send_ngl_message(nglusername, message, count, delay, update, context):
+async def send_ngl_message(nglusername, message, count, delay, update: Update, context: ContextTypes.DEFAULT_TYPE):
     value = 0
     notsend = 0
     use_proxy = True
@@ -50,9 +53,9 @@ def send_ngl_message(nglusername, message, count, delay, update, context):
     
     if proxies is None:
         use_proxy = False
-        context.bot.send_message(chat_id=update.effective_chat.id, text="Không tìm thấy proxy. Chuyển sang chế độ không dùng proxy.")
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="Không tìm thấy proxy. Chuyển sang chế độ không dùng proxy.")
 
-    context.bot.send_message(chat_id=update.effective_chat.id, text="Bắt đầu gửi tin nhắn...")
+    await context.bot.send_message(chat_id=update.effective_chat.id, text="Bắt đầu gửi tin nhắn...")
 
     while value < count:
         headers = {
@@ -89,20 +92,20 @@ def send_ngl_message(nglusername, message, count, delay, update, context):
             if response.status_code == 200:
                 notsend = 0
                 value += 1
-                context.bot.send_message(chat_id=update.effective_chat.id, text=f"Đã gửi => {value}")
+                await context.bot.send_message(chat_id=update.effective_chat.id, text=f"Đã gửi => {value}")
             else:
                 notsend += 1
-                context.bot.send_message(chat_id=update.effective_chat.id, text="Lỗi gửi tin nhắn")
+                await context.bot.send_message(chat_id=update.effective_chat.id, text="Lỗi gửi tin nhắn")
                 
             if notsend == 4:
                 if use_proxy:
-                    context.bot.send_message(chat_id=update.effective_chat.id, text="Đang thay đổi thông tin và proxy...")
+                    await context.bot.send_message(chat_id=update.effective_chat.id, text="Đang thay đổi thông tin và proxy...")
                     proxies = Proxy()
                     if proxies is None:
                         use_proxy = False
-                        context.bot.send_message(chat_id=update.effective_chat.id, text="Proxy lỗi. Chuyển sang chế độ không dùng proxy.")
+                        await context.bot.send_message(chat_id=update.effective_chat.id, text="Proxy lỗi. Chuyển sang chế độ không dùng proxy.")
                 else:
-                     context.bot.send_message(chat_id=update.effective_chat.id, text="Đang thay đổi thông tin...")
+                     await context.bot.send_message(chat_id=update.effective_chat.id, text="Đang thay đổi thông tin...")
 
                 deviceId()
                 UserAgent()
@@ -112,29 +115,29 @@ def send_ngl_message(nglusername, message, count, delay, update, context):
 
         except requests.exceptions.ProxyError as e:
             if use_proxy:
-                context.bot.send_message(chat_id=update.effective_chat.id, text="Lỗi Proxy!")
+                await context.bot.send_message(chat_id=update.effective_chat.id, text="Lỗi Proxy!")
                 proxies = Proxy()
                 if proxies is None:
                     use_proxy = False
-                    context.bot.send_message(chat_id=update.effective_chat.id, text="Proxy lỗi. Chuyển sang chế độ không dùng proxy.")
+                    await context.bot.send_message(chat_id=update.effective_chat.id, text="Proxy lỗi. Chuyển sang chế độ không dùng proxy.")
             else:
-                context.bot.send_message(chat_id=update.effective_chat.id, text="Lỗi: không dùng proxy")
+                await context.bot.send_message(chat_id=update.effective_chat.id, text="Lỗi: không dùng proxy")
 
-    context.bot.send_message(chat_id=update.effective_chat.id, text="Hoàn tất gửi tin nhắn!")
+    await context.bot.send_message(chat_id=update.effective_chat.id, text="Hoàn tất gửi tin nhắn!")
 
-def start(update, context):
-    context.bot.send_message(chat_id=update.effective_chat.id, text="Hi! Hãy sử dụng lệnh /ngl để bắt đầu gửi tin nhắn.")
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await context.bot.send_message(chat_id=update.effective_chat.id, text="Chào bạn! Hãy sử dụng lệnh /ngl để bắt đầu gửi tin nhắn.")
 
-def ngl_command(update, context):
-    context.bot.send_message(chat_id=update.effective_chat.id, text="Vui lòng nhập thông tin theo định dạng: \n\n/ngl <username> <tin nhắn> <số lượng> <delay (giây)>")
+async def ngl_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await context.bot.send_message(chat_id=update.effective_chat.id, text="Vui lòng nhập thông tin theo định dạng: \n\n/ngl <username> <tin nhắn> <số lượng> <delay (giây)>")
 
-def handle_message(update, context):
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     if text.startswith('/ngl '):
         try:
             parts = text.split(' ', 5)
             if len(parts) != 5:
-                context.bot.send_message(chat_id=update.effective_chat.id, text="Định dạng không đúng. Vui lòng nhập theo định dạng: \n\n/ngl <username> <tin nhắn> <số lượng> <delay (giây)>")
+                await context.bot.send_message(chat_id=update.effective_chat.id, text="Định dạng không đúng. Vui lòng nhập theo định dạng: \n\n/ngl <username> <tin nhắn> <số lượng> <delay (giây)>")
                 return
             
             _, nglusername, message, count, delay = parts
@@ -142,19 +145,19 @@ def handle_message(update, context):
             delay = float(delay)
 
             if count <= 0 or delay < 0:
-               context.bot.send_message(chat_id=update.effective_chat.id, text="Số lượng phải lớn hơn 0 và delay phải lớn hơn hoặc bằng 0")
-               return
+                await context.bot.send_message(chat_id=update.effective_chat.id, text="Số lượng phải lớn hơn 0 và delay phải lớn hơn hoặc bằng 0")
+                return
             
-            send_ngl_message(nglusername, message, count, delay, update, context)
+            await send_ngl_message(nglusername, message, count, delay, update, context)
         
         except ValueError:
-            context.bot.send_message(chat_id=update.effective_chat.id, text="Lỗi: Số lượng và delay phải là số.")
+             await context.bot.send_message(chat_id=update.effective_chat.id, text="Lỗi: Số lượng và delay phải là số.")
         
         except Exception as e:
-            context.bot.send_message(chat_id=update.effective_chat.id, text=f"Lỗi: {e}")
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=f"Lỗi: {e}")
 
     else:
-       context.bot.send_message(chat_id=update.effective_chat.id, text="Vui lòng sử dụng lệnh /ngl để bắt đầu.")
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="Vui lòng sử dụng lệnh /ngl để bắt đầu.")
 
 def main():
     application = Application.builder().token(BOT_TOKEN).build()
