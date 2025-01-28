@@ -1,2 +1,4 @@
 requests
 pystyle
+python-telegram-bot
+pyTelegramBotAPI
