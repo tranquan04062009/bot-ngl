@@ -7,7 +7,7 @@ from collections import defaultdict
 
 # ================= CONFIGURATION =================
 BOT_TOKEN = "7766543633:AAFnN9tgGWFDyApzplak0tiJTafCxciFydo"  # Replace with your actual bot token
-API_URL = "https://freefireinfoapiv2lk-team.vercel.app/send_like?uid={UID}&server={region}"
+API_URL = "https://lk-team-guildinfo.vercel.app/guildinfo?uid={id}&region={region}"
 MAX_THREADS = 100  # Maximum number of threads for processing requests
 REQUEST_DELAY = 1  # Delay between API requests in seconds
 COOLDOWN_TIME = 30  # Cooldown time for users in seconds
