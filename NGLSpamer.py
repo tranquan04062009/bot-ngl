@@ -18,6 +18,7 @@ from telegram.ext import (
     filters
 )
 import asyncio
+import re
 
 # Enable logging
 logging.basicConfig(
@@ -38,20 +39,55 @@ spam_task = None
 progress_message = None
 error_message = None
 
+# Common IP ranges for spoofing (Example - You may need more ranges from your target region)
+VALID_IP_RANGES = [
+    "103.5.24.0/22",  # Example
+    "113.160.0.0/13",  # Example
+    "115.72.0.0/14",
+    "116.96.0.0/15",
+    "118.68.0.0/14",
+    "123.16.0.0/13",
+    "123.20.0.0/14",
+    "171.224.0.0/13",
+    "171.244.0.0/14",
+    "171.248.0.0/13",
+    "171.252.0.0/14",
+    "203.162.0.0/15",
+    "203.170.0.0/16",
+    "203.190.0.0/16",
+    "203.206.0.0/16",
+    "203.210.0.0/15",
+    "203.228.0.0/14"
+]
 
-def generate_random_ip():
-    return f'{random.randint(1, 255)}.{random.randint(1, 255)}.{random.randint(1, 255)}.{random.randint(1, 255)}'
 
-def tao_device_id():
-    characters = string.ascii_lowercase + string.digits
-    parts = [
-        ''.join(random.choices(characters, k=8)),
-        ''.join(random.choices(characters, k=4)),
-        ''.join(random.choices(characters, k=4)),
-        ''.join(random.choices(characters, k=4)),
-        ''.join(random.choices(characters, k=12)),
-    ]
-    return f"{'-'.join(parts)}"
+#Function to generate IP from a valid range
+def generate_ip_from_range():
+    range_str = random.choice(VALID_IP_RANGES)
+    parts = range_str.split("/")
+    ip_prefix = parts[0]
+    cidr = int(parts[1])
+    ip_parts = list(map(int, ip_prefix.split(".")))
+    available_bits = 32 - cidr
+    random_int = random.randint(0, (1 << available_bits) - 1)
+    for i in range(4):
+      if (cidr >= 8):
+          cidr -= 8
+          continue
+      ip_parts[i] = (ip_parts[i] & (255 << (8-cidr))) | ((random_int >> (available_bits - (8 - cidr))) & ((1 << (8-cidr)) - 1))
+      available_bits -= (8-cidr)
+      cidr = 0
+
+    return ".".join(map(str, ip_parts))
+
+def generate_device_id(user_agent):
+    android_id = ''.join(random.choices(string.hexdigits[:16], k=16)).lower()
+    if "Android" in user_agent:
+        return f"android-{android_id}"
+    elif "iPhone" in user_agent or 'iPad' in user_agent or 'iOS' in user_agent:
+        return f"ios-{secrets.token_hex(8)}"
+    else:
+      return f"web-{secrets.token_hex(8)}"
 
 
 def lay_user_agent():
@@ -77,7 +113,20 @@ def tao_session_retry():
     return session
 
 
-def random_headers():
+def random_headers(user_agent):
+    fetch_sites = ['same-origin', 'same-site', 'none']
+    fetch_modes = ['cors', 'navigate', 'no-cors']
+    fetch_dests = ['empty', 'document', 'nested-document', 'object', 'embed', 'image', 'audio', 'video', 'script', 'style', 'font', 'report']
+    languages = [
+        "en-US,en;q=0.9",
+        "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
+        "es-ES,es;q=0.9,en-US;q=0.8,en;q=0.7",
+        "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7",
+        "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7",
+        "ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7",
+        "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
+        "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7"
+    ]
     return {
         'Host': 'ngl.link',
         'sec-ch-ua': f'"{random.choice(["Google Chrome", "Mozilla Firefox", "Microsoft Edge"]) }";v="{random.randint(100,120)}", "Chromium";v="{random.randint(100,120)}", "Not-A.Brand";v="24"',
@@ -85,39 +134,40 @@ def random_headers():
         'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
         'x-requested-with': 'XMLHttpRequest',
         'sec-ch-ua-mobile': '?0',
-        'user-agent': f'{lay_user_agent()}',
+        'user-agent': user_agent,
         'sec-ch-ua-platform': f'"{random.choice(["Windows", "macOS", "Linux"])}"',
         'origin': 'https://ngl.link',
-        'sec-fetch-site': 'same-origin',
-        'sec-fetch-mode': 'cors',
-        'sec-fetch-dest': 'empty',
+        'sec-fetch-site': random.choice(fetch_sites),
+        'sec-fetch-mode': random.choice(fetch_modes),
+        'sec-fetch-dest': random.choice(fetch_dests),
         'referer': f'https://ngl.link/',
-        'accept-language': f'{random.choice(["en-US,en;q=0.9","tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7","es-ES,es;q=0.9,en-US;q=0.8,en;q=0.7"])}',
-        'x-forwarded-for': f'{generate_random_ip()}'
+        'accept-language': random.choice(languages),
+        'x-forwarded-for': generate_ip_from_range()
     }
 
 
 def gui_ngl_tin_nhan(session, nglusername, message):
-  headers = random_headers()
-  data = {
+    user_agent = lay_user_agent()
+    headers = random_headers(user_agent)
+    data = {
         'username': f'{nglusername}',
         'question': f'{message}',
-        'deviceId': f'{tao_device_id()}',
+        'deviceId': generate_device_id(user_agent),
         'gameSlug': '',
         'referrer': '',
         't': str(int(time.time() * 1000)),
         'r': secrets.token_urlsafe(16),
     }
-  try:
-      response = session.post('https://ngl.link/api/submit', headers=headers, data=data, timeout=10)
-      response.raise_for_status()
-      return True, response.status_code
-  except requests.exceptions.RequestException as e:
-      logging.error(f"Lỗi Request: {e}")
-      return False, f"Lỗi Request: {e}"
-  except HTTPException as e:
-      logging.error(f"Lỗi HTTP: {e}")
-      return False, f"Lỗi HTTP: {e}"
+    try:
+        response = session.post('https://ngl.link/api/submit', headers=headers, data=data, timeout=10)
+        response.raise_for_status()
+        return True, response.status_code
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Lỗi Request: {e}")
+        return False, f"Lỗi Request: {e}"
+    except HTTPException as e:
+        logging.error(f"Lỗi HTTP: {e}")
+        return False, f"Lỗi HTTP: {e}"
 
 
 async def spamngl_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
@@ -228,6 +278,16 @@ async def stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
        await update.message.reply_text("Không có phiên spam nào đang chạy")
 
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    help_text = """
+    Sử dụng các lệnh sau:
+    /start - Kiểm tra trạng thái hoạt động của bot.
+    /spamngl - Bắt đầu một phiên spam tin nhắn NGL.
+    /stop - Dừng phiên spam đang chạy.
+    /help - Hiển thị hướng dẫn này.
+    """
+    await update.message.reply_text(help_text)
+
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("Hủy bỏ quá trình.", reply_markup=ReplyKeyboardRemove())
@@ -251,6 +311,7 @@ def main() -> None:
 
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("stop", stop_command))
+    application.add_handler(CommandHandler("help", help_command))
     application.add_handler(conv_handler)
 
     application.run_polling()
