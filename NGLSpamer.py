@@ -17,11 +17,13 @@ from telegram.ext import (
     MessageHandler,
     filters
 )
+import asyncio
 
 # Enable logging
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
+
 # Constants for conversation states
 (
     USERNAME,
@@ -29,12 +31,11 @@ logging.basicConfig(
     COUNT,
     DELAY,
 ) = map(chr, range(4))
-# Global flag to control the spam loop
+
+# Global variable to control the spamming process
 spam_running = False
-nglusername = None
-message = None
-count = None
-delay = None
+spam_task = None
+progress_message = None
 
 def tao_device_id():
     characters = string.ascii_lowercase + string.digits
@@ -47,7 +48,6 @@ def tao_device_id():
     ]
     return f"{'-'.join(parts)}"
 
-
 def lay_user_agent():
     try:
         ua = UserAgent()
@@ -55,7 +55,6 @@ def lay_user_agent():
     except FakeUserAgentError as e:
         logging.error(f"Lỗi khi lấy User Agent: {e}")
         return None
-
 
 def tao_session_retry():
     retry_strategy = Retry(
@@ -69,7 +68,6 @@ def tao_session_retry():
     session.mount("https://", adapter)
     session.mount("http://", adapter)
     return session
-
 
 def random_headers():
     return {
@@ -89,7 +87,6 @@ def random_headers():
         'accept-language': f'{random.choice(["en-US,en;q=0.9","tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7","es-ES,es;q=0.9,en-US;q=0.8,en;q=0.7"])}',
         'x-forwarded-for': f'{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}'
     }
-
 
 def gui_ngl_tin_nhan(session, nglusername, message):
     data = {
@@ -112,94 +109,97 @@ def gui_ngl_tin_nhan(session, nglusername, message):
         logging.error(f"Lỗi HTTP: {e}")
         return False, f"Lỗi HTTP: {e}"
 
-async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-     await update.message.reply_text("Bot đã được khởi động")
-
 async def spamngl_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
-    global spam_running, nglusername, message, count, delay
-    spam_running = False
-    nglusername = None
-    message = None
-    count = None
-    delay = None
     await update.message.reply_text("Nhập tên người dùng NGL:")
     return USERNAME
 
 async def get_username(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
-    global nglusername
-    nglusername = update.message.text
-    context.user_data["username"] = nglusername
+    username = update.message.text
+    context.user_data["username"] = username
     await update.message.reply_text("Nhập nội dung tin nhắn:")
     return MESSAGE
 
 async def get_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
-    global message
     message = update.message.text
     context.user_data["message"] = message
     await update.message.reply_text("Nhập số lượng tin nhắn:")
     return COUNT
 
 async def get_count(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
-    global count
     try:
         count = int(update.message.text)
         context.user_data["count"] = count
-        await update.message.reply_text("Nhập độ trễ giữa các tin nhắn khuyến cáo nên để 1 (0 để nhanh nhất):")
+        await update.message.reply_text("Nhập độ trễ giữa các tin nhắn (0 để nhanh nhất):")
         return DELAY
     except ValueError:
         await update.message.reply_text("Lỗi: Số lượng tin nhắn phải là một số. Hãy nhập lại:")
         return COUNT
 
 async def get_delay(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    global delay
     try:
         delay = float(update.message.text)
         context.user_data["delay"] = delay
         await update.message.reply_text("Bắt đầu gửi tin nhắn...")
-        await spam_process(update, context)
+        await start_spam_process(update, context)
         return ConversationHandler.END
     except ValueError:
-        await update.message.reply_text("Lỗi: Độ trễ phải là một số. Hãy nhập lại:")
-        return DELAY
+       await update.message.reply_text("Lỗi: Độ trễ phải là một số. Hãy nhập lại:")
+       return DELAY
 
-async def stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    global spam_running
-    spam_running = False
-    await update.message.reply_text("Đã dừng quá trình gửi tin nhắn.")
+async def start_spam_process(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global spam_running, spam_task, progress_message
+    spam_running = True
+    spam_task = asyncio.create_task(spam_process(update, context))
+    progress_message = await update.message.reply_text("Đang gửi tin nhắn: 0")
 
 async def spam_process(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global spam_running
-    global nglusername
-    global message
-    global count
-    global delay
-    
+    global spam_running, progress_message
+    nglusername = context.user_data.get("username")
+    message = context.user_data.get("message")
+    count = context.user_data.get("count")
+    delay = context.user_data.get("delay")
+
     session = tao_session_retry()
     value = 0
     notsend = 0
-    sent_count = 0
-    spam_running = True
 
     while value < count and spam_running:
-       success, result = gui_ngl_tin_nhan(session, nglusername, message)
-       if success:
+        success, result = gui_ngl_tin_nhan(session, nglusername, message)
+        if success:
             notsend = 0
             value += 1
-            sent_count += 1
-       else:
+            if progress_message:
+                await progress_message.edit_text(f"Đang gửi tin nhắn: {value}")
+        else:
             notsend += 1
             await update.message.reply_text(f"[-] Chưa gửi được, {result}")
-       if notsend == 4:
+        if notsend == 4:
             await update.message.reply_text("[!] Đang đổi thông tin...")
             notsend = 0
-       time.sleep(delay + random.uniform(0, 0.5))
-
-    if sent_count > 0:
-       await update.message.reply_text(f"Gửi thành công tổng cộng {sent_count} tin nhắn!")
-    elif spam_running:
-       await update.message.reply_text("Không có tin nhắn nào được gửi")
-
+        if spam_running:
+             await asyncio.sleep(delay + random.uniform(0,0.5))
+    if progress_message:
+            await progress_message.edit_text(f"Hoàn thành! Đã gửi tổng cộng {value} tin nhắn.")
     spam_running = False
+    spam_task = None
+
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global spam_running
+    if spam_running:
+        await update.message.reply_text("Đã có phiên đang chạy, hãy dùng lệnh /stop để dừng")
+    else:
+      await update.message.reply_text("Sẵn sàng để spam.")
+
+async def stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global spam_running, spam_task
+    if spam_running:
+        spam_running = False
+        if spam_task:
+            spam_task.cancel()
+            spam_task = None
+        await update.message.reply_text("Đã dừng phiên spam.")
+    else:
+       await update.message.reply_text("Không có phiên spam nào đang chạy")
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("Hủy bỏ quá trình.", reply_markup=ReplyKeyboardRemove())
@@ -208,9 +208,6 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 def main() -> None:
     TOKEN = "7766543633:AAFnN9tgGWFDyApzplak0tiJTafCxciFydo"
     application = ApplicationBuilder().token(TOKEN).build()
-
-    application.add_handler(CommandHandler("start", start_command))
-    application.add_handler(CommandHandler("stop", stop_command))
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("spamngl", spamngl_start)],
@@ -223,7 +220,10 @@ def main() -> None:
         fallbacks=[CommandHandler("cancel", cancel)],
     )
 
+    application.add_handler(CommandHandler("start", start_command))
+    application.add_handler(CommandHandler("stop", stop_command))
     application.add_handler(conv_handler)
+
     application.run_polling()
 
 if __name__ == "__main__":
