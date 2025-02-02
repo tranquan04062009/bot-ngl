@@ -36,6 +36,11 @@ logging.basicConfig(
 spam_running = False
 spam_task = None
 progress_message = None
+error_message = None
+
+
+def generate_random_ip():
+  return f'{random.randint(1, 255)}.{random.randint(1, 255)}.{random.randint(1, 255)}.{random.randint(1, 255)}'
 
 def tao_device_id():
     characters = string.ascii_lowercase + string.digits
@@ -48,6 +53,7 @@ def tao_device_id():
     ]
     return f"{'-'.join(parts)}"
 
+
 def lay_user_agent():
     try:
         ua = UserAgent()
@@ -55,6 +61,7 @@ def lay_user_agent():
     except FakeUserAgentError as e:
         logging.error(f"Lỗi khi lấy User Agent: {e}")
         return None
+
 
 def tao_session_retry():
     retry_strategy = Retry(
@@ -68,6 +75,7 @@ def tao_session_retry():
     session.mount("https://", adapter)
     session.mount("http://", adapter)
     return session
+
 
 def random_headers():
     return {
@@ -85,11 +93,13 @@ def random_headers():
         'sec-fetch-dest': 'empty',
         'referer': f'https://ngl.link/',
         'accept-language': f'{random.choice(["en-US,en;q=0.9","tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7","es-ES,es;q=0.9,en-US;q=0.8,en;q=0.7"])}',
-        'x-forwarded-for': f'{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}'
+        'x-forwarded-for': f'{generate_random_ip()}'
     }
 
+
 def gui_ngl_tin_nhan(session, nglusername, message):
-    data = {
+  headers = random_headers()
+  data = {
         'username': f'{nglusername}',
         'question': f'{message}',
         'deviceId': f'{tao_device_id()}',
@@ -98,20 +108,22 @@ def gui_ngl_tin_nhan(session, nglusername, message):
         't': str(int(time.time() * 1000)),
         'r': secrets.token_urlsafe(16),
     }
-    try:
-        response = session.post('https://ngl.link/api/submit', headers=random_headers(), data=data, timeout=10)
-        response.raise_for_status()
-        return True, response.status_code
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Lỗi Request: {e}")
-        return False, f"Lỗi Request: {e}"
-    except HTTPException as e:
-        logging.error(f"Lỗi HTTP: {e}")
-        return False, f"Lỗi HTTP: {e}"
+  try:
+      response = session.post('https://ngl.link/api/submit', headers=headers, data=data, timeout=10)
+      response.raise_for_status()
+      return True, response.status_code
+  except requests.exceptions.RequestException as e:
+      logging.error(f"Lỗi Request: {e}")
+      return False, f"Lỗi Request: {e}"
+  except HTTPException as e:
+      logging.error(f"Lỗi HTTP: {e}")
+      return False, f"Lỗi HTTP: {e}"
+
 
 async def spamngl_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
     await update.message.reply_text("Nhập tên người dùng NGL:")
     return USERNAME
+
 
 async def get_username(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
     username = update.message.text
@@ -119,11 +131,13 @@ async def get_username(update: Update, context: ContextTypes.DEFAULT_TYPE) -> st
     await update.message.reply_text("Nhập nội dung tin nhắn:")
     return MESSAGE
 
+
 async def get_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
     message = update.message.text
     context.user_data["message"] = message
     await update.message.reply_text("Nhập số lượng tin nhắn:")
     return COUNT
+
 
 async def get_count(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
     try:
@@ -134,6 +148,7 @@ async def get_count(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
     except ValueError:
         await update.message.reply_text("Lỗi: Số lượng tin nhắn phải là một số. Hãy nhập lại:")
         return COUNT
+
 
 async def get_delay(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
@@ -146,14 +161,16 @@ async def get_delay(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
        await update.message.reply_text("Lỗi: Độ trễ phải là một số. Hãy nhập lại:")
        return DELAY
 
+
 async def start_spam_process(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global spam_running, spam_task, progress_message
+    global spam_running, spam_task, progress_message, error_message
     spam_running = True
     spam_task = asyncio.create_task(spam_process(update, context))
     progress_message = await update.message.reply_text("Đang gửi tin nhắn: 0")
+    error_message = await update.message.reply_text("")
 
 async def spam_process(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global spam_running, progress_message
+    global spam_running, progress_message, error_message
     nglusername = context.user_data.get("username")
     message = context.user_data.get("message")
     count = context.user_data.get("count")
@@ -172,14 +189,18 @@ async def spam_process(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await progress_message.edit_text(f"Đang gửi tin nhắn: {value}")
         else:
             notsend += 1
-            await update.message.reply_text(f"[-] Chưa gửi được, {result}")
+            if error_message:
+                await error_message.edit_text(f"[-] Lỗi: {result}")
         if notsend == 4:
-            await update.message.reply_text("[!] Đang đổi thông tin...")
+            if error_message:
+                await error_message.edit_text("[!] Đang đổi thông tin...")
             notsend = 0
         if spam_running:
-             await asyncio.sleep(delay + random.uniform(0,0.5))
+            await asyncio.sleep(delay + random.uniform(0, 0.5))
     if progress_message:
-            await progress_message.edit_text(f"Hoàn thành! Đã gửi tổng cộng {value} tin nhắn.")
+       await progress_message.edit_text(f"Hoàn thành! Đã gửi tổng cộng {value} tin nhắn.")
+    if error_message:
+       await error_message.edit_text("")
     spam_running = False
     spam_task = None
 
@@ -190,13 +211,16 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
       await update.message.reply_text("Sẵn sàng để spam.")
 
+
 async def stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global spam_running, spam_task
+    global spam_running, spam_task, error_message
     if spam_running:
         spam_running = False
         if spam_task:
             spam_task.cancel()
             spam_task = None
+        if error_message:
+            await error_message.edit_text("")
         await update.message.reply_text("Đã dừng phiên spam.")
     else:
        await update.message.reply_text("Không có phiên spam nào đang chạy")
@@ -204,6 +228,7 @@ async def stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("Hủy bỏ quá trình.", reply_markup=ReplyKeyboardRemove())
     return ConversationHandler.END
+
 
 def main() -> None:
     TOKEN = "7766543633:AAFnN9tgGWFDyApzplak0tiJTafCxciFydo"
