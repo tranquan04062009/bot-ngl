@@ -1,4 +1,3 @@
 requests
-pystyle
 python-telegram-bot
-pyTelegramBotAPI
+fake-useragent
