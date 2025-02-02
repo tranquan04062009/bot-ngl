@@ -40,7 +40,7 @@ error_message = None
 
 
 def generate_random_ip():
-  return f'{random.randint(1, 255)}.{random.randint(1, 255)}.{random.randint(1, 255)}.{random.randint(1, 255)}'
+    return f'{random.randint(1, 255)}.{random.randint(1, 255)}.{random.randint(1, 255)}.{random.randint(1, 255)}'
 
 def tao_device_id():
     characters = string.ascii_lowercase + string.digits
@@ -121,6 +121,7 @@ def gui_ngl_tin_nhan(session, nglusername, message):
 
 
 async def spamngl_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
+    context.user_data.clear()
     await update.message.reply_text("Nhập tên người dùng NGL:")
     return USERNAME
 
@@ -169,6 +170,7 @@ async def start_spam_process(update: Update, context: ContextTypes.DEFAULT_TYPE)
     progress_message = await update.message.reply_text("Đang gửi tin nhắn: 0")
     error_message = await update.message.reply_text("")
 
+
 async def spam_process(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global spam_running, progress_message, error_message
     nglusername = context.user_data.get("username")
@@ -204,6 +206,7 @@ async def spam_process(update: Update, context: ContextTypes.DEFAULT_TYPE):
     spam_running = False
     spam_task = None
 
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global spam_running
     if spam_running:
@@ -224,6 +227,7 @@ async def stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Đã dừng phiên spam.")
     else:
        await update.message.reply_text("Không có phiên spam nào đang chạy")
+
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("Hủy bỏ quá trình.", reply_markup=ReplyKeyboardRemove())
