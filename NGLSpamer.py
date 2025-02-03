@@ -173,10 +173,27 @@ def gui_ngl_tin_nhan(nglusername, message):
     except HTTPException as e:
         logging.error(f"Lỗi HTTP: {e}")
         return False, f"Lỗi HTTP: {e}"
+        
+async def reset_spam_state():
+    global spam_running, spam_task, progress_message, error_message
+    spam_running = False
+    if spam_task:
+        spam_task.cancel()
+        spam_task = None
+    progress_message = None
+    error_message = None
 
 
 async def spamngl_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
+    global spam_running
+    if spam_running:
+        await update.message.reply_text("Đã có phiên đang chạy, hãy dùng lệnh /stop để dừng")
+        return ConversationHandler.END
+    
+    # Reset both global state and user data
+    await reset_spam_state()
     context.user_data.clear()
+    
     await update.message.reply_text("Nhập tên người dùng NGL:")
     return USERNAME
 
@@ -253,14 +270,16 @@ async def spam_process(update: Update, context: ContextTypes.DEFAULT_TYPE):
             notsend = 0
         if spam_running:
             await asyncio.sleep(delay + random.uniform(0, 0.5))
+    
     if progress_message:
-       await progress_message.edit_text(f"Hoàn thành! Đã gửi tổng cộng {value} tin nhắn.")
+        await progress_message.edit_text(f"Hoàn thành! Đã gửi tổng cộng {value} tin nhắn.")
     if error_message:
-       await error_message.edit_text("")
-    spam_running = False
-    spam_task = None
-    return ConversationHandler.END # Reset the conversation state
-
+        await error_message.edit_text("")
+    
+    # Reset state after completion
+    await reset_spam_state()
+    context.user_data.clear()
+    
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global spam_running
     if spam_running:
