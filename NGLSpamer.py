@@ -41,8 +41,8 @@ error_message = None
 
 # Common IP ranges for spoofing (Example - You may need more ranges from your target region)
 VALID_IP_RANGES = [
-    "103.252.0.0/22",
-    "115.146.120.0/21",
+    "103.252.0.0/22",  # Example
+    "115.146.120.0/21",  # Example
     "115.165.160.0/21",
     "103.21.148.0/22",
     "124.158.0.0/20",
@@ -254,12 +254,11 @@ async def spam_process(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if spam_running:
             await asyncio.sleep(delay + random.uniform(0, 0.5))
     if progress_message:
-        await progress_message.edit_text(f"Hoàn thành! Đã gửi tổng cộng {value} tin nhắn.")
+       await progress_message.edit_text(f"Hoàn thành! Đã gửi tổng cộng {value} tin nhắn.")
     if error_message:
        await error_message.edit_text("")
     spam_running = False
     spam_task = None
-    context.user_data.clear()
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
