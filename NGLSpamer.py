@@ -174,15 +174,6 @@ def gui_ngl_tin_nhan(nglusername, message):
         logging.error(f"Lỗi HTTP: {e}")
         return False, f"Lỗi HTTP: {e}"
         
-async def reset_spam_state():
-    global spam_running, spam_task, progress_message, error_message
-    spam_running = False
-    if spam_task:
-        spam_task.cancel()
-        spam_task = None
-    progress_message = None
-    error_message = None
-
 
 async def spamngl_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
     global spam_running
@@ -304,6 +295,16 @@ async def stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("Không có phiên spam nào đang chạy")
         
+        
+async def reset_spam_state():
+    global spam_running, spam_task, progress_message, error_message
+    spam_running = False
+    if spam_task:
+        spam_task.cancel()
+        spam_task = None
+    progress_message = None
+    error_message = None
+    
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = """
