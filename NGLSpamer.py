@@ -280,6 +280,9 @@ async def spam_process(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await reset_spam_state()
     context.user_data.clear()
     
+    # Force end the conversation
+    return ConversationHandler.END
+    
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global spam_running
     if spam_running:
@@ -289,17 +292,18 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global spam_running, spam_task, error_message
+    global spam_running
     if spam_running:
-        spam_running = False
-        if spam_task:
-            spam_task.cancel()
-            spam_task = None
-        if error_message:
-            await error_message.edit_text("")
+        # Reset both global state and user data
+        await reset_spam_state()
+        context.user_data.clear()
         await update.message.reply_text("Đã dừng phiên spam.")
+        
+        # Force end any ongoing conversation
+        return ConversationHandler.END
     else:
-       await update.message.reply_text("Không có phiên spam nào đang chạy")
+        await update.message.reply_text("Không có phiên spam nào đang chạy")
+        
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = """
@@ -325,7 +329,7 @@ def main() -> None:
     global SESSIONS
     SESSIONS = [tao_session_retry() for _ in range(5)]
 
-
+    # Modified conversation handler with per_message=True and per_chat=True
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("spamngl", spamngl_start)],
         states={
@@ -335,12 +339,14 @@ def main() -> None:
             DELAY: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_delay)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
+        per_message=True,
+        per_chat=True
     )
 
+    application.add_handler(conv_handler)
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("stop", stop_command))
     application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(conv_handler)
 
     application.run_polling()
 
