@@ -41,25 +41,27 @@ error_message = None
 
 # Common IP ranges for spoofing (Example - You may need more ranges from your target region)
 VALID_IP_RANGES = [
-    "103.5.24.0/22",  # Example
-    "113.160.0.0/13",  # Example
-    "115.72.0.0/14",
-    "116.96.0.0/15",
-    "118.68.0.0/14",
-    "123.16.0.0/13",
-    "123.20.0.0/14",
-    "171.224.0.0/13",
-    "171.244.0.0/14",
-    "171.248.0.0/13",
-    "171.252.0.0/14",
-    "203.162.0.0/15",
-    "203.170.0.0/16",
-    "203.190.0.0/16",
-    "203.206.0.0/16",
-    "203.210.0.0/15",
-    "203.228.0.0/14"
+    "103.252.0.0/22	",  # Example
+    "115.146.120.0/21",  # Example
+    "115.165.160.0/21",
+    "103.21.148.0/22",
+    "124.158.0.0/20	",
+    "101.99.0.0/18",
+    "103.216.72.0/22",
+    "103.39.92.0/22",
+    "113.22.0.0/16",
+    "202.151.168.0/21",
+    "125.253.112.0/20",
+    "180.93.0.0/16",
+    "103.141.176.0/23",
+    "103.84.76.0/22",
+    "117.103.192.0/18",
+    "103.233.48.0/22",
+    "221.132.30.0/23"
 ]
 
+# Create a pool of sessions
+SESSIONS = []
 
 #Function to generate IP from a valid range
 def generate_ip_from_range():
@@ -112,6 +114,8 @@ def tao_session_retry():
     session.mount("http://", adapter)
     return session
 
+def get_random_session():
+    return random.choice(SESSIONS)
 
 def random_headers(user_agent):
     fetch_sites = ['same-origin', 'same-site', 'none']
@@ -146,7 +150,7 @@ def random_headers(user_agent):
     }
 
 
-def gui_ngl_tin_nhan(session, nglusername, message):
+def gui_ngl_tin_nhan(nglusername, message):
     user_agent = lay_user_agent()
     headers = random_headers(user_agent)
     data = {
@@ -159,6 +163,7 @@ def gui_ngl_tin_nhan(session, nglusername, message):
         'r': secrets.token_urlsafe(16),
     }
     try:
+        session = get_random_session()
         response = session.post('https://ngl.link/api/submit', headers=headers, data=data, timeout=10)
         response.raise_for_status()
         return True, response.status_code
@@ -228,12 +233,11 @@ async def spam_process(update: Update, context: ContextTypes.DEFAULT_TYPE):
     count = context.user_data.get("count")
     delay = context.user_data.get("delay")
 
-    session = tao_session_retry()
     value = 0
     notsend = 0
 
     while value < count and spam_running:
-        success, result = gui_ngl_tin_nhan(session, nglusername, message)
+        success, result = gui_ngl_tin_nhan(nglusername, message)
         if success:
             notsend = 0
             value += 1
@@ -262,7 +266,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if spam_running:
         await update.message.reply_text("Đã có phiên đang chạy, hãy dùng lệnh /stop để dừng")
     else:
-      await update.message.reply_text("Sẵn sàng để spam.")
+      await update.message.reply_text("Sẵn sàng để spam dùng lệnh /help để xem hướng dân.")
 
 
 async def stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -297,6 +301,11 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 def main() -> None:
     TOKEN = "7766543633:AAFnN9tgGWFDyApzplak0tiJTafCxciFydo"
     application = ApplicationBuilder().token(TOKEN).build()
+
+    # Create sessions
+    global SESSIONS
+    SESSIONS = [tao_session_retry() for _ in range(5)]
+
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("spamngl", spamngl_start)],
