@@ -259,7 +259,7 @@ async def spam_process(update: Update, context: ContextTypes.DEFAULT_TYPE):
        await error_message.edit_text("")
     spam_running = False
     spam_task = None
-
+    return ConversationHandler.END # Reset the conversation state
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global spam_running
