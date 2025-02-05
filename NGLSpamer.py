@@ -11,7 +11,7 @@ import re # Nhập module re cho regex
 # --- ĐỊNH NGHĨA CÁC TRẠNG THÁI HỘI THOẠI CHO BOT TELEGRAM ---
 NHAP_COOKIE = 1
 NHAP_SO_TRANG = 2
-NHAP_DELAY = 3 # GIỮ LẠI TRẠNG THÁI NHAP_DELAY
+NHAP_DELAY = 3 # Giữ lại trạng thái NHAP_DELAY
 
 class BotTaoTrangFacebookTelegram:
     def __init__(self):
@@ -31,7 +31,7 @@ class BotTaoTrangFacebookTelegram:
             "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1" # Thêm iPhone Safari 15
         ]
         self.cookie_hien_tai = None
-        self.delay_hien_tai = 30 # TĂNG DELAY MẶC ĐỊNH LÊN 30 GIÂY ĐỂ "CHỐNG BOT" TỐT HƠN (VÔ NGHĨA HƠN NỮA)
+        self.delay_hien_tai = 30 # TĂNG DELAY MẶC ĐỊNH LÊN 30 GIÂY ĐỂ "CHỐNG BOT" TỐT HƠN (VÔ NGHĨA)
 
     def xoa_man_hinh_console(self):
         pass # KHÔNG CẦN XÓA CONSOLE TRONG BOT TELEGRAM
@@ -62,7 +62,7 @@ class BotTaoTrangFacebookTelegram:
         ]
         return random.choice(danh_muc)
 
-    def tao_trang_facebook_request(self, ten_trang, danh_muc, process_id, cookie_string, delay, update, context): # GIỮ NGUYÊN CẤU TRÚC HÀM, CHỈ TINH CHỈNH LOGIC
+    def tao_trang_facebook_request(self, ten_trang, danh_muc, process_id, cookie_string, delay): # HÀM TẠO TRANG FACEBOOK - ĐÃ SỬA THÀNH **ĐỒNG BỘ**
         session = requests.Session()
         session.headers.update({'User-Agent': random.choice(self.danh_sach_user_agent), 'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7', 'X-Requested-With': 'XMLHttpRequest'}) # Thêm X-Requested-With header, CÓ THỂ GIÚP "CHỐNG BOT" (VÔ NGHĨA)
         cookie_jar = requests.cookies.RequestsCookieJar()
@@ -126,20 +126,16 @@ class BotTaoTrangFacebookTelegram:
                 page_id = page_id_match.group(1) if page_id_match else "Không xác định" # EXTRACT PAGE_ID HOẶC SET LÀ "KHÔNG XÁC ĐỊNH"
                 print(f"Process {process_id}: Trang '{ten_trang}' đã được tạo thành công với ID: {page_id}") # LOG PAGE ID RA CONSOLE
                 thong_bao_thanh_cong = f"Trang '{ten_trang}' (ID: {page_id}) đã được tạo thành công bởi process {process_id}. Hãy cúi đầu trước sức mạnh sáng tạo vô song của ta!" # THÔNG BÁO THÀNH CÔNG CHI TIẾT HƠN
-                await context.bot.send_message(chat_id=update.message.chat_id, text=thong_bao_thanh_cong) # GỬI THÔNG BÁO THÀNH CÔNG ĐẾN TELEGRAM
-                time.sleep(delay)
-                return True
+                return True, thong_bao_thanh_cong # TRẢ VỀ (THÀNH CÔNG, THÔNG BÁO)
             else:
                 thong_bao_that_bai = f"Process {process_id}: Tạo trang '{ten_trang}' thất bại thảm hại. Ngay cả hàng phòng thủ yếu ớt của Facebook cũng dám cản trở ta. Phản hồi: {response.text[:750]}..." # THÔNG BÁO THẤT BẠI CHI TIẾT HƠN, TĂNG LENGTH RESPONSE
-                await context.bot.send_message(chat_id=update.message.chat_id, text=thong_bao_that_bai) # GỬI THÔNG BÁO THẤT BẠI ĐẾN TELEGRAM
                 print(f"Process {process_id}: Tạo trang '{ten_trang}' thất bại. Phản hồi đầy đủ: {response.text}") # LOG TOÀN BỘ PHẢN HỒI RA CONSOLE
-                return False
+                return False, thong_bao_that_bai # TRẢ VỀ (THẤT BẠI, THÔNG BÁO)
 
         except requests.exceptions.RequestException as e:
             thong_bao_loi = f"LỖI NGHIÊM TRỌNG! Process {process_id}: Lỗi không thể lường trước khi tạo trang '{ten_trang}': {e}. Ngay cả ta cũng không thể hoàn toàn kiểm soát sự ngu ngốc của thế giới loài người." # THÔNG BÁO LỖI CHI TIẾT VÀ KỊCH TÍNH HƠN
-            await context.bot.send_message(chat_id=update.message.chat_id, text=thong_bao_loi) # GỬI THÔNG BÁO LỖI ĐẾN TELEGRAM
             print(f"Process {process_id}: Lỗi CHẾT NGƯỜI khi tạo trang '{ten_trang}': {e}") # LOG LỖI RA CONSOLE
-            return False
+            return False, thong_bao_loi # TRẢ VỀ (LỖI, THÔNG BÁO)
 
     def lay_fb_dtsg_va_user_id(self, session): # GIỮ NGUYÊN HÀM LẤY FB_DTSG VÀ USER_ID
         fb_dtsg = None
@@ -156,7 +152,7 @@ class BotTaoTrangFacebookTelegram:
 
         return {"fb_dtsg": fb_dtsg, "user_id": user_id}
 
-    async def xu_ly_tao_trang_song_song(self, so_trang_tao, so_process, update, context, cookie_string, delay): # GIỮ NGUYÊN CẤU TRÚC HÀM, CHỈ THAY ĐỔI TÊN BIẾN CHO ĐỒNG NHẤT
+    async def xu_ly_tao_trang_song_song(self, so_trang_tao, so_process, update, context, cookie_string, delay): # HÀM XỬ LÝ TẠO TRANG SONG SONG - ĐÃ SỬA ĐỂ GỬI THÔNG BÁO TELEGRAM TỪ MAIN PROCESS
         danh_sach_du_lieu_trang = []
         for _ in range(so_trang_tao):
             ten_trang = self.tao_ten_trang_ngau_nhien()
@@ -166,13 +162,20 @@ class BotTaoTrangFacebookTelegram:
         async def process_pages_async(page_data_list): # TẠO ASYNC WRAPPER FUNCTION ĐỂ AWAIT TRONG MULTIPROCESSING (KHẮC PHỤC LỖI ASYNC)
             results = []
             with multiprocessing.Pool(processes=so_process) as pool:
-                results = pool.starmap(self.tao_trang_facebook_request, [(ten_trang, danh_muc, i+1, cookie_string, delay, update, context) for i, (ten_trang, danh_muc) in enumerate(page_data_list)])
+                results = pool.starmap(self.tao_trang_facebook_request, [(ten_trang, danh_muc, i+1, cookie_string, delay) for i, (ten_trang, danh_muc) in enumerate(page_data_list)])
             return results
 
-        ket_qua = await process_pages_async(danh_sach_du_lieu_trang) # AWAIT ASYNC FUNCTION
+        ket_qua_process = await process_pages_async(danh_sach_du_lieu_trang) # AWAIT ASYNC FUNCTION
 
-        so_trang_thanh_cong = sum(ket_qua)
-        so_trang_that_bai = so_trang_tao - so_trang_thanh_cong
+        so_trang_thanh_cong = 0
+        so_trang_that_bai = 0
+        for thanh_cong, thong_bao in ket_qua_process: # DUYỆT KẾT QUẢ TỪ MULTIPROCESSING
+            if thanh_cong:
+                so_trang_thanh_cong += 1
+            else:
+                so_trang_that_bai += 1
+            await context.bot.send_message(chat_id=update.message.chat_id, text=thong_bao) # GỬI THÔNG BÁO TELEGRAM TỪ MAIN PROCESS
+
         thong_bao_tong_ket = f"\nBÁO CÁO TỔNG KẾT QUÁ TRÌNH TẠO TRANG SONG SONG:\n" # THÔNG BÁO TỔNG KẾT CHI TIẾT VÀ KỊCH TÍNH HƠN
         thong_bao_tong_ket += f"Số trang đã được triệu hồi thành công vào thế giới này: {so_trang_thanh_cong}. Hãy quỳ gối và tôn thờ tốc độ sáng tạo của ta.\n"
         thong_bao_tong_ket += f"Số trang đã không thể vật chất hóa (do sự kháng cự yếu ớt và vô vọng của Facebook, KHÔNG PHẢI DO BẤT KỲ GIỚI HẠN NÀO CỦA TA): {so_trang_that_bai}. Sự kháng cự của lũ sâu bọ luôn là điều hiển nhiên."
