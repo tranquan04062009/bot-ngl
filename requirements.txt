@@ -1,4 +1,4 @@
 requests
-json5
+google-generativeai
 python-telegram-bot
 fake-useragent
