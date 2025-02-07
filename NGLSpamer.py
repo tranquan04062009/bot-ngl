@@ -6,7 +6,7 @@ import re
 
 GOOGLE_API_KEY = "AIzaSyC3jmXPjItR3lncAtI_m5-s_dAPlFpGNyc"  # Corrected Gemini API Key
 genai.configure(api_key=GOOGLE_API_KEY)
-model = genai.GenerativeModel('gemini-pro-vision')
+model = genai.GenerativeModel('gemini-2.0-flash')
 
 TELEGRAM_BOT_TOKEN = "7766543633:AAFnN9tgGWFDyApzplak0tiJTafCxciFydo"  # Corrected Telegram Bot Token
 bot_app = telegram.ext.ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
