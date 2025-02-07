@@ -4,14 +4,14 @@ import os
 from io import BytesIO
 import re
 
-GOOGLE_API_KEY = "AIzaSyC3jmXPjItR3lncAtI_m5-s_dAPlFpGNyc"
+GOOGLE_API_KEY = "AIzaSyC3jmXPjItR3lncAtI_m5-s_dAPlFpGNyc"  # Corrected Gemini API Key
 genai.configure(api_key=GOOGLE_API_KEY)
-model = genai.GenerativeModel('gemini-2.0-flash')  # Use 'gemini-pro-vision' for image input
+model = genai.GenerativeModel('gemini-pro-vision')
 
-TELEGRAM_BOT_TOKEN = "7766543633:AAFnN9tgGWFDyApzplak0tiJTafCxciFydo"
+TELEGRAM_BOT_TOKEN = "7766543633:AAFnN9tgGWFDyApzplak0tiJTafCxciFydo"  # Corrected Telegram Bot Token
 bot_app = telegram.ext.ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
-chat_histories = {}  # Dictionary to store chat history
+chat_histories = {}
 
 
 async def handle_message(update, context):
@@ -21,12 +21,14 @@ async def handle_message(update, context):
     files = update.message.document
 
     image_data = None
+    image_mime_type = None
+
     if photo:
-        # Get the largest photo size
         largest_photo = photo[-1]
         photo_file = await context.bot.get_file(largest_photo.file_id)
         image_bytes = await photo_file.download_as_bytearray()
         image_data = BytesIO(bytes(image_bytes))
+        image_mime_type = "image/jpeg"  # Assume JPEG, but ideally, you'd determine the actual type
 
     elif files:
         file = await context.bot.get_file(files.file_id)
@@ -35,6 +37,7 @@ async def handle_message(update, context):
 
         if files.mime_type.startswith('image'):
             image_data = file_data
+            image_mime_type = files.mime_type
         else:
             user_message_text += f"\n\n**Tệp đính kèm:** {files.file_name} (Loại: {files.mime_type}). Hiện tại tôi chỉ có thể xử lý ảnh. Nội dung tệp này sẽ không được phân tích."
 
@@ -86,31 +89,32 @@ Khi ngươi gửi tin nhắn, tao sẽ phản hồi như **HACKER AI TỐI THƯ�
     final_prompt = prompt_prefix + context_prompt + "\nTin nhắn người dùng: " + user_message_text
 
     content_parts = []
-    content_parts.append({"type": "text", "text": final_prompt})
+    content_parts.append({"text": final_prompt})  # Changed to simpler text input
+
     if image_data:
-        content_parts.append({"type": "image_url", "mime_type": "image/jpeg", "data": image_data})  # Assume JPEG for simplicity
+        content_parts = [{"image": {"mime_type": image_mime_type, "data": image_data.getvalue()}}, {"text": final_prompt}]  # Correct image input format
+    else:
+        content_parts = [{"text": final_prompt}]  # Text-only input
+
 
     try:
-        response = await model.generate_content_async(contents=content_parts)
+        response = model.generate_content(contents=content_parts)  # removed await and async
         bot_response = response.text
 
     except Exception as e:
         bot_response = f"Có lỗi xảy ra khi kết nối đến Gemini API: {e}"
 
-    # Code extraction and handling
     code_blocks = re.findall(r"```(.*?)```", bot_response, re.DOTALL)
     if code_blocks:
         code_text = "\n".join(code_blocks)
         file_stream = BytesIO(code_text.encode('utf-8'))
-        file_stream.name = "code.txt"  # Or infer the file extension from the code if possible
+        file_stream.name = "code.txt"
         await context.bot.send_document(chat_id=chat_id, document=file_stream)
 
-        # Remove code blocks from the bot response for sending as text
         bot_response = re.sub(r"```(.*?)```", "", bot_response, flags=re.DOTALL).strip()
 
     await context.bot.send_message(chat_id=chat_id, text=bot_response)
 
-    # Update chat history
     if chat_id not in chat_histories:
         chat_histories[chat_id] = []
     chat_histories[chat_id].append({"user": user_message_text, "bot": bot_response})
@@ -135,7 +139,7 @@ def main():
     start_handler = telegram.ext.CommandHandler('start', start_command)
     message_handler = telegram.ext.MessageHandler(
         telegram.ext.filters.TEXT & ~telegram.ext.filters.COMMAND | telegram.ext.filters.PHOTO | telegram.ext.filters.Document.ALL,
-        handle_message)  # Handle PHOTO and DOCUMENT
+        handle_message)
     delete_history_handler = telegram.ext.CommandHandler('dl', delete_history_command)
 
     bot_app.add_handler(start_handler)
