@@ -332,61 +332,64 @@ def tao_thoi_gian_tre_nguoi_dung():
     return random.expovariate(2.0) + 0.5
 
 def spam_ngl(ngl_link, tin_nhan, so_lan_spam, proxies=None):
-    print(f"Bắt đầu spam NGL: {ngl_link}, Tin nhắn: '{tin_nhan}', Số lần: {so_lan_spam}, Proxies: {bool(proxies)}")
-    dem_spam_thanh_cong = 0
-    dem_bi_chan = 0
-    session = requests.Session()
-    retry_strategy = requests.packages.urllib3.util.retry.Retry(
-        total=5,
-        status_forcelist=RETRY_STATUS_CODES,
-        backoff_factor=2,
-        method_whitelist=["POST"]
-    )
-    adapter = requests.adapters.HTTPAdapter(max_retries=retry_strategy)
-    session.mount("https://", adapter)
-    session.mount("http://", adapter)
+        print(f"**DEBUG:** Hàm spam_ngl được gọi. Link: {ngl_link}, Tin nhắn: '{tin_nhan[:20]}...', Số lần: {so_lan_spam}, Proxies: {bool(proxies)}") # Dòng DEBUG 1
 
-    for i in range(so_lan_spam):
-        phuong_phap = random.choice(phuong_phap_spam)
-        tin_nhan_spam = ap_dung_phuong_phap_spam(tin_nhan, phuong_phap)
+        dem_spam_thanh_cong = 0
+        dem_bi_chan = 0
+        session = requests.Session()
+        retry_strategy = requests.packages.urllib3.util.retry.Retry(
+            total=5,
+            status_forcelist=RETRY_STATUS_CODES,
+            backoff_factor=2,
+            method_whitelist=["POST"]
+        )
+        adapter = requests.adapters.HTTPAdapter(max_retries=retry_strategy)
+        session.mount("https://", adapter)
+        session.mount("http://", adapter)
 
-        du_lieu = {
-            "link": ngl_link.split("/")[-1],
-            "question": tin_nhan_spam
-        }
+        for i in range(so_lan_spam):
+            phuong_phap = random.choice(phuong_phap_spam)
+            tin_nhan_spam = ap_dung_phuong_phap_spam(tin_nhan, phuong_phap)
 
-        headers = tao_headers_nguoi_dung()
-        proxy = None
-        if proxies:
-            proxy_str = random.choice(proxies)
-            if proxy_str:
-                proxy_host, proxy_port = proxy_str.split(":")
-                proxy = {'http': f'http://{proxy_host}:{proxy_port}', 'https': f'https://{proxy_host}:{proxy_port}'}
+            du_lieu = {
+                "link": ngl_link.split("/")[-1],
+                "question": tin_nhan_spam
+            }
 
-        try:
-            time.sleep(tao_thoi_gian_tre_nguoi_dung() / 2)
-            response = session.post(API_URL_NGL, data=du_lieu, headers=headers, proxies=proxy, timeout=20)
-            response.raise_for_status()
-            if response.status_code == 200:
-                dem_spam_thanh_cong += 1
-                print(f"#{i+1} Spam thành công ({phuong_phap}): '{tin_nhan_spam[:50]}...'")
-            else:
-                print(f"#{i+1} Lỗi không xác định. Mã trạng thái: {response.status_code}")
-        except requests.exceptions.HTTPError as e:
-            dem_bi_chan += 1
-            print(f"#{i+1} BỊ CHẶN HOẶC LỖI HTTP: {e}")
-            if e.response.status_code == 429:
-                print("Phát hiện giới hạn tốc độ. Tạm dừng spam lâu hơn...")
-                time.sleep(30 + random.randint(10, 20))
-            elif e.response.status_code in [400, 403, 500, 503]:
+            headers = tao_headers_nguoi_dung()
+            proxy = None
+            if proxies:
+                proxy_str = random.choice(proxies)
+                if proxy_str:
+                    proxy_host, proxy_port = proxy_str.split(":")
+                    proxy = {'http': f'http://{proxy_host}:{proxy_port}', 'https': f'https://{proxy_host}:{proxy_port}'}
+
+            try:
+                time.sleep(tao_thoi_gian_tre_nguoi_dung() / 2)
+                print(f"**DEBUG:** Chuẩn bị gửi request #{i+1}...") # Dòng DEBUG 2
+                response = session.post(API_URL_NGL, data=du_lieu, headers=headers, proxies=proxy, timeout=20)
+                print(f"**DEBUG:** Đã nhận được response #{i+1}. Status code: {response.status_code}") # Dòng DEBUG 3
+                response.raise_for_status()
+                if response.status_code == 200:
+                    dem_spam_thanh_cong += 1
+                    print(f"#{i+1} Spam thành công ({phuong_phap}): '{tin_nhan_spam[:50]}...'")
+                else:
+                    print(f"#{i+1} Lỗi không xác định. Mã trạng thái: {response.status_code}")
+            except requests.exceptions.HTTPError as e:
+                dem_bi_chan += 1
+                print(f"#{i+1} BỊ CHẶN HOẶC LỖI HTTP: {e}")
+                if e.response.status_code == 429:
+                    print("Phát hiện giới hạn tốc độ. Tạm dừng spam lâu hơn...")
+                    time.sleep(30 + random.randint(10, 20))
+                elif e.response.status_code in [400, 403, 500, 503]:
+                    time.sleep(5 + random.random())
+            except requests.exceptions.RequestException as e:
+                print(f"#{i+1} LỖI KẾT NỐI: {e}")
                 time.sleep(5 + random.random())
-        except requests.exceptions.RequestException as e:
-            print(f"#{i+1} LỖI KẾT NỐI: {e}")
-            time.sleep(5 + random.random())
 
-        time.sleep(tao_thoi_gian_tre_nguoi_dung())
+            time.sleep(tao_thoi_gian_tre_nguoi_dung())
 
-    print(f"Hoàn thành spam. Tổng cộng spam thành công: {dem_spam_thanh_cong}/{so_lan_spam}. Số lần bị chặn/lỗi: {dem_bi_chan}")
+        print(f"Hoàn thành spam. Tổng cộng spam thành công: {dem_spam_thanh_cong}/{so_lan_spam}. Số lần bị chặn/lỗi: {dem_bi_chan}")
 
 async def bat_dau_lenh_xu_ly(update: telegram.Update, context: CallbackContext) -> None:
     user = update.effective_user
