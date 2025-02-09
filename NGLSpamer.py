@@ -427,7 +427,7 @@ async def bat_dau_spam(update: telegram.Update, context: CallbackContext, proxie
         chat_id=update.effective_chat.id
     )
 
-async def huy_bo_xu_ly(update: telegram.Update, context: CallbackContext0) -> int:
+async def huy_bo_xu_ly(update: telegram.Update, context: CallbackContext) -> int:
     user = update.effective_user
     await update.message.reply_text(
         f"Đã hủy bỏ lệnh spam, {user.mention_markdown_v2()}!", reply_markup=telegram.ReplyKeyboardRemove()
