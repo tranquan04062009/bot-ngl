@@ -1,4 +1,3 @@
-python
 import telegram
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ConversationHandler, CallbackContext
 import requests
@@ -8,7 +7,7 @@ import os
 from fake_useragent import UserAgent
 
 API_URL_NGL = "https://ngl.link/api/submit"
-TOKEN_BOT_TELEGRAM = "YOUR_TELEGRAM_BOT_TOKEN"
+TOKEN_BOT_TELEGRAM = "7766543633:AAFnN9tgGWFDyApzplak0tiJTafCxciFydo"
 
 UA = UserAgent()
 USER_AGENTS = [UA.chrome, UA.firefox, UA.safari, UA.opera, UA.internetexplorer, UA.random]
@@ -18,7 +17,8 @@ REFERERS = [
     "https://www.facebook.com/",
     "https://www.twitter.com/",
     "https://www.youtube.com/",
-    "https://www.instagram.com/"
+    "https://www.instagram.com/",
+    "https://www.youtube.com/"
 ]
 ACCEPT_ENCODINGS = ["gzip", "deflate", "br", "*"]
 LANGUAGES = ["vi-VN", "vi", "en-US", "en", "ja-JP", "ja", "ko-KR", "ko", "zh-CN", "zh"]
