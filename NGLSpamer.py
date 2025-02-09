@@ -11,7 +11,7 @@ import re
 
 # --- Hằng số và Cấu hình ---
 API_URL_NGL = "https://ngl.link/api/submit"
-TOKEN_BOT_TELEGRAM = "YOUR_TELEGRAM_BOT_TOKEN"  # **CẦN THAY THẾ BẰNG TOKEN BOT CỦA BẠN!**
+TOKEN_BOT_TELEGRAM = "7766543633:AAFnN9tgGWFDyApzplak0tiJTafCxciFydo"  # **CẦN THAY THẾ BẰNG TOKEN BOT CỦA BẠN!**
 
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
