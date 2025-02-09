@@ -358,23 +358,23 @@ async def bat_dau_lenh_xu_ly(update: telegram.Update, context: CallbackContext) 
         reply_markup=telegram.ForceReply(selective=True),
     )
 
-async def spam_lenh_xu_ly(update: telegram.Update, context: CallbackContext.DEFAULT_TYPE) -> int:
+async def spam_lenh_xu_ly(update: telegram.Update, context: CallbackContext) -> int:
     await update.message.reply_text('Vui lòng gửi NGL link bạn muốn spam:')
     return NHAP_LINK_NGL
 
-async def link_ngl_xu_ly(update: telegram.Update, context: CallbackContext.DEFAULT_TYPE) -> int:
+async def link_ngl_xu_ly(update: telegram.Update, context: CallbackContext) -> int:
     link_ngl = update.message.text
     context.user_data['link_ngl'] = link_ngl
     await update.message.reply_text('Tuyệt vời! Bây giờ hãy nhập tin nhắn spam (có thể dài dòng):')
     return NHAP_TIN_NHAN_SPAM
 
-async def tin_nhan_spam_xu_ly(update: telegram.Update, context: CallbackContext.DEFAULT_TYPE) -> int:
+async def tin_nhan_spam_xu_ly(update: telegram.Update, context: CallbackContext) -> int:
     tin_nhan_spam = update.message.text
     context.user_data['tin_nhan_spam'] = tin_nhan_spam
     await update.message.reply_text('Cuối cùng, cho tôi biết bạn muốn spam bao nhiêu lần:')
     return NHAP_SO_LAN_SPAM
 
-async def so_lan_spam_xu_ly(update: telegram.Update, context: CallbackContext.DEFAULT_TYPE) -> int:
+async def so_lan_spam_xu_ly(update: telegram.Update, context: CallbackContext) -> int:
     try:
         so_lan_spam = int(update.message.text)
         if so_lan_spam <= 0:
@@ -388,7 +388,7 @@ async def so_lan_spam_xu_ly(update: telegram.Update, context: CallbackContext.DE
     await update.message.reply_text('Bạn có muốn sử dụng proxies không? (có/không)')
     return XAC_NHAN_PROXY
 
-async def xac_nhan_proxy_xu_ly(update: telegram.Update, context: CallbackContext.DEFAULT_TYPE) -> int:
+async def xac_nhan_proxy_xu_ly(update: telegram.Update, context: CallbackContext) -> int:
     xac_nhan = update.message.text.lower()
     if xac_nhan == 'có' or xac_nhan == 'co':
         await update.message.reply_text('Vui lòng tải lên file proxies.txt của bạn (mỗi dòng là host:port):')
@@ -400,7 +400,7 @@ async def xac_nhan_proxy_xu_ly(update: telegram.Update, context: CallbackContext
         await update.message.reply_text('Vui lòng trả lời "có" hoặc "không".')
         return XAC_NHAN_PROXY
 
-async def upload_file_proxy_xu_ly(update: telegram.Update, context: CallbackContext.DEFAULT_TYPE) -> int:
+async def upload_file_proxy_xu_ly(update: telegram.Update, context: CallbackContext) -> int:
     file_proxy = await update.message.document.get_content()
     proxy_lines = file_proxy.decode().strip().split('\n')
     proxies = [line.strip() for line in proxy_lines if line.strip()]
@@ -414,7 +414,7 @@ async def upload_file_proxy_xu_ly(update: telegram.Update, context: CallbackCont
     await bat_dau_spam(update, context, proxies=proxies)
     return ConversationHandler.END
 
-async def bat_dau_spam(update: telegram.Update, context: CallbackContext.DEFAULT_TYPE, proxies=None):
+async def bat_dau_spam(update: telegram.Update, context: CallbackContext, proxies=None):
     link_ngl = context.user_data['link_ngl']
     tin_nhan_spam = context.user_data['tin_nhan_spam']
     so_lan_spam = context.user_data['so_lan_spam']
@@ -427,7 +427,7 @@ async def bat_dau_spam(update: telegram.Update, context: CallbackContext.DEFAULT
         chat_id=update.effective_chat.id
     )
 
-async def huy_bo_xu_ly(update: telegram.Update, context: CallbackContext.DEFAULT_TYPE) -> int:
+async def huy_bo_xu_ly(update: telegram.Update, context: CallbackContext0) -> int:
     user = update.effective_user
     await update.message.reply_text(
         f"Đã hủy bỏ lệnh spam, {user.mention_markdown_v2()}!", reply_markup=telegram.ReplyKeyboardRemove()
