@@ -1,4 +1,3 @@
-python
 import telegram
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ConversationHandler, CallbackContext
 import requests
@@ -383,7 +382,7 @@ async def bat_dau_lenh_xu_ly(update: telegram.Update, context: CallbackContext) 
     user = update.effective_user
     await update.message.reply_markdown_v2(
         fr"Chào {user.mention_markdown_v2()}\! Tôi là Bot Spam NGL **Tối Thượng 2025 - Không Dấu Vết**\.\n\n"
-        "Sử dụng lệnh /help để khám phá sức mạnh vô song\.",
+        "Sử dụng lệnh /help để khám phá sức mạnh vô song.",
         reply_markup=telegram.ForceReply(selective=True),
     )
 
