@@ -354,7 +354,7 @@ async def bat_dau_lenh_xu_ly(update: telegram.Update, context: CallbackContext.D
     user = update.effective_user
     await update.message.reply_markdown_v2(
         fr"Chào {user.mention_markdown_v2()}\! Tôi là Bot Spam NGL tối thượng\.\n\n"
-        "Sử dụng lệnh /spam để bắt đầu\.",
+        "Sử dụng lệnh /spam để bắt đầu.",
         reply_markup=telegram.ForceReply(selective=True),
     )
 
