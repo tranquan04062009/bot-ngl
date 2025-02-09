@@ -350,7 +350,7 @@ def spam_ngl(ngl_link, tin_nhan, so_lan_spam, proxies=None):
 
     print(f"Hoàn thành spam. Tổng cộng spam thành công: {dem_spam_thanh_cong}/{so_lan_spam}. Số lần bị chặn/lỗi: {dem_bi_chan}")
 
-async def bat_dau_lenh_xu_ly(update: telegram.Update, context: CallbackContext.DEFAULT_TYPE) -> None:
+async def bat_dau_lenh_xu_ly(update: telegram.Update, context: CallbackContext) -> None:
     user = update.effective_user
     await update.message.reply_markdown_v2(
         fr"Chào {user.mention_markdown_v2()}\! Tôi là Bot Spam NGL tối thượng\.\n\n"
