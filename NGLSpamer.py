@@ -13,21 +13,24 @@ API_URL_NGL = "https://ngl.link/api/submit"
 TOKEN_BOT_TELEGRAM = "7766543633:AAFnN9tgGWFDyApzplak0tiJTafCxciFydo"  # **CẦN THAY THẾ BẰNG TOKEN BOT CỦA BẠN!**
 
 USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14.1) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Linux; Android 13; SM-S901U) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
-    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_1_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Mobile/15E148 Safari/604.1",
-    "Mozilla/5.0 (iPad; CPU OS 17_1_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Mobile/15E148 Safari/604.1",
-    "Mozilla/5.0 (X11; Linux x86_64; rv:120.0) Gecko/20100101 Firefox/120.0",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/120.0.2210.77",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.71",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.71",
-    "Mozilla/5.0 (X11; CrOS x86_64 15437.43.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.71 Safari/537.36",
-    "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.71 Mobile Safari/537.36",
-    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/120.0.6099.68 Mobile/15E148 Safari/604.1",
-    "Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/120.0.6099.68 Mobile/15E148 Safari/604.1"
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.129 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_2) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.129 Safari/537.36",
+    "Mozilla/5.0 (Linux; Android 13; Pixel 7 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.129 Mobile Safari/537.36",
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1",
+    "Mozilla/5.0 (iPad; CPU OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1",
+    "Mozilla/5.0 (X11; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Edge/120.0.2210.144",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.129 OPR/106.0.4998.77",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.129 Brave/120.1.62.129",
+    "Mozilla/5.0 (X11; CrOS x86_64 15649.61.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.129 Safari/537.36",
+    "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.129 Mobile Safari/537.36",
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/120.0.6099.119 Mobile/15E148 Safari/604.1",
+    "Mozilla/5.0 (iPad; CPU OS 17_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/120.0.6099.119 Mobile/15E148 Safari/604.1",
+    "Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; Trident/5.0)",
+    "Mozilla/5.0 (Windows NT 6.1; WOW64; Trident/7.0; ASInfo: .NET4.0C; .NET4.0E; .NET CLR 2.0.50727; .NET CLR 3.0.30729; .NET CLR 3.5.30729; rv:11.0) like Gecko",
+    "Mozilla/5.0 (compatible, MSIE 11, Windows NT 6.3; Trident/7.0; rv:11.0) like Gecko"
 ]
 REFERERS = [
     "https://ngl.link/",
@@ -36,7 +39,13 @@ REFERERS = [
     "https://www.twitter.com/",
     "https://www.youtube.com/",
     "https://www.instagram.com/",
-    "https://www.tiktok.com/"
+    "https://www.tiktok.com/",
+    "https://www.reddit.com/",
+    "https://www.wikipedia.org/",
+    "https://vnexpress.net/",
+    "https://tuoitre.vn/",
+    "https://thanhnien.vn/",
+    "https://zingnews.vn/"
 ]
 ACCEPT_ENCODINGS = ["gzip", "deflate", "br", "*"]
 ACCEPT_LANGUAGES = ["vi-VN,vi;q=0.9,fr-FR;q=0.8,fr;q=0.7,en-US;q=0.6,en;q=0.5", "en-US,en;q=0.9", "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7", "vi-VN,vi;q=0.9", "en-GB,en;q=0.9"]
@@ -260,7 +269,8 @@ def ap_dung_phuong_phap_spam(tin_nhan, phuong_phap):
         prefixes = ["Hãy nhớ rằng, ", "Đừng bao giờ quên, ", "Hãy ghi nhớ, ", "Luôn xem xét, ", "Chúng ta đừng bỏ qua, "]
         return random.choice(prefixes) + tin_nhan
     elif phuong_phap == "điệp_ngữ_cuối_câu":
-        suffixes = [", hãy nhớ điều đó.", ", hãy ghi nhớ điều đó.", ", đừng bao giờ quên.", ", luôn xem xét điều đó.", ", chúng ta đừng bỏ qua điều đó."]; return tin_nhan + random.choice(suffixes)
+        suffixes = [", hãy nhớ điều đó", ", hãy ghi nhớ điều đó", ", đừng bao giờ quên", ", luôn xem xét điều đó", ", chúng ta đừng bỏ qua điều đó"]
+        return tin_nhan + random.choice(suffixes)
     elif phuong_phap == "đảo_ngữ":
         words = tin_nhan.split()
         if len(words) >= 4:
@@ -381,13 +391,13 @@ def spam_ngl(ngl_link, tin_nhan, so_lan_spam, proxies=None):
 async def bat_dau_lenh_xu_ly(update: telegram.Update, context: CallbackContext) -> None:
     user = update.effective_user
     await update.message.reply_markdown_v2(
-        fr"Chào {user.mention_markdown_v2()}\! Tôi là Bot Spam NGL **Tối Thượng 2025 - Không Dấu Vết**\.\n\n"
+        fr"Chào {user.mention_markdown_v2()}! Tôi là Bot Spam NGL **Tối Thượng 2025 - Không Dấu Vết**.\n\n"
         "Sử dụng lệnh /help để khám phá sức mạnh vô song.",
         reply_markup=telegram.ForceReply(selective=True),
     )
 
 async def help_lenh_xu_ly(update: telegram.Update, context: CallbackContext) -> None:
-    help_text = """
+    help_text = r"""
 **Bot Spam NGL Tối Thượng 2025 - Không Dấu Vết - Hướng Dẫn Sử Dụng**
 
 Chào mừng đến với đỉnh cao công nghệ spam NGL! Bot này được thiết kế để vượt qua mọi giới hạn, với khả năng chống chặn vô song và xóa dấu vết hoàn hảo. Hãy khám phá sức mạnh thực sự:
@@ -399,7 +409,7 @@ Chào mừng đến với đỉnh cao công nghệ spam NGL! Bot này được t
 *   `/spam`: Kích hoạt quy trình spam NGL. Bot sẽ dẫn dắt bạn từng bước.
 *   `/cancel`: Thoát khỏi quy trình spam bất cứ lúc nào.
 
-**Quy Trình Spam (lệnh /spam):**
+**Quy Trình Spam (lệnh `/spam`):**
 
 1.  **Gõ `/spam`:**  Bắt đầu cuộc trò chuyện và chuẩn bị cho hành động.
 2.  **NGL Link Mục Tiêu:**  Cung cấp URL NGL (ví dụ: `https://ngl.link/username`).
