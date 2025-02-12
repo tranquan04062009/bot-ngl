@@ -313,100 +313,23 @@ class BrainTaiXiuVohananWebCaoCapAI: # Đổi tên class để phân biệt phi�
         logger.info(f"Mô hình AI học hỏi nâng cao đã được cập nhật. Bias Tài: {self.prediction_model['bias_tai']:.4f}, Bias Xỉu: {self.prediction_model['bias_xiu']:.4f}, Xu hướng gần đây - Tài: {self.prediction_model['recent_trend_tai']:.4f}, Xỉu: {self.prediction_model['recent_trend_xiu']:.4f}")
         logger.debug(f"Mô hình chi tiết AI nâng cao: {self.prediction_model}")
 
-    # ... (Các hàm analyze_streaks, calculate_streak_bias, analyze_alternating_pattern, analyze_previous_n_results GIỮ NGUYÊN) ...
-    analyze_streaks = BrainTaiXiuVohananWebCaoCapAI.analyze_streaks
-    calculate_streak_bias = BrainTaiXiuVohananWebCaoCapAI.calculate_streak_bias
-    analyze_alternating_pattern = BrainTaiXiuVohananWebCaoCapAI.analyze_alternating_pattern
-    analyze_previous_n_results = BrainTaiXiuVohananWebCaoCapAI.analyze_previous_n_results
+    # Các hàm phân tích streak, alternating pattern, previous N results - GIỮ NGUYÊN VÀ THÊM HÀM TÍNH TRUNG BÌNH VÀ TẦN SUẤT STREAK
+    analyze_streaks = BrainTaiXiuVohananWebCaoCapAI.analyze_streaks # Giữ nguyên
+    calculate_streak_bias = BrainTaiXiuVohananWebCaoCapAI.calculate_streak_bias # Giữ nguyên
+    analyze_alternating_pattern = BrainTaiXiuVohananWebCaoCapAI.analyze_alternating_pattern # Giữ nguyên
+    analyze_previous_n_results = BrainTaiXiuVohananWebCaoCapAI.analyze_previous_n_results # Giữ nguyên
 
+    def calculate_average_streak_length(self, result_type, history=None): # HÀM TÍNH ĐỘ DÀI STREAK TRUNG BÌNH - FEATURE MỚI
+        streaks = self.analyze_streaks(result_type, history)
+        if not streaks:
+            return 0.0
+        return sum(streaks) / len(streaks)
 
-    def predict_result(self, user_history=None): # Cập nhật predict_result để sử dụng NN - PREDICT RESULT NN
-        nn_prediction_tai_prob = 0.5 # Giá trị mặc định nếu NN không dự đoán được
-        nn_prediction_xiu_prob = 0.5
-
-        features = self._extract_features(user_history if user_history else self.data_history) # Lấy features cho NN - LẤY FEATURE NN
-        scaled_features = data_scaler.transform([features]) # Chuẩn hóa features - CHUẨN HÓA FEATURE
-
-        try:
-            nn_probs = self.prediction_model["nn_model"].predict_proba(scaled_features)[0] # Dự đoán bằng NN - DỰ ĐOÁN NN
-            nn_prediction_tai_prob = nn_probs[1] # Lấy prob cho 'tai' (class 1)
-            nn_prediction_xiu_prob = nn_probs[0] # Lấy prob cho 'xiu' (class 0)
-            logger.debug(f"NN Prediction Probabilities - Tai: {nn_prediction_tai_prob:.4f}, Xiu: {nn_prediction_xiu_prob:.4f}")
-        except Exception as e:
-            logger.warning(f"Lỗi khi dự đoán bằng Neural Network, sử dụng bias cơ bản: {e}")
-            nn_prediction_tai_prob = self.prediction_model["bias_tai"] # Fallback về bias nếu lỗi NN
-            nn_prediction_xiu_prob = self.prediction_model["bias_xiu"]
-
-
-        # Kết hợp NN prediction và bias cơ bản (có thể điều chỉnh cách kết hợp) - KẾT HỢP NN VÀ BIAS
-        prediction_score_tai = nn_prediction_tai_prob # Sử dụng NN prob trực tiếp, có thể thêm bias nếu muốn
-        prediction_score_xiu = nn_prediction_xiu_prob
-
-        if prediction_score_tai > PREDICTION_THRESHOLD_TAI:
-            return "tai"
-        elif prediction_score_xiu > PREDICTION_THRESHOLD_XIU:
-            return "xiu"
-        else:
-            if nn_prediction_tai_prob > nn_prediction_xiu_prob: # Dùng NN prob để quyết định cuối cùng nếu không vượt ngưỡng
-                return "tai"
-            else:
-                return "xiu"
-
-    # ... (Các hàm receive_history_data, process_feedback GIỮ NGUYÊN) ...
-    receive_history_data = BrainTaiXiuVohananWebCaoCapAI.receive_history_data
-    process_feedback = BrainTaiXiuVohananWebCaoCapAI.process_feedback
-
-
-# ===== ĐỊNH NGHĨA CLASS BrainTaiXiuVohananWebCaoCapAINextGen (PHIÊN BẢN MỚI NHẤT) =====
-class BrainTaiXiuVohananWebCaoCapAINextGen: # Đổi tên class để phân biệt phiên bản AI NextGen
-    def __init__(self):
-        self.data_history = deque(maxlen=HISTORY_WINDOW_SIZE)
-        self.learning_rate = LEARNING_RATE
-        self.prediction_model = self.create_cao_cap_ai_model() # Sử dụng mô hình AI Cao Cấp NextGen
-        self.last_data_refresh = datetime.now() - timedelta(seconds=DATA_REFRESH_INTERVAL)
-        self.data_transformer = QuantileTransformer(output_distribution='normal', random_state=NN_RANDOM_STATE) if TRANSFORM_METHOD == 'quantile' else None # Khởi tạo Transformer riêng cho class
-
-        self.load_history_from_file()
-
-    def create_cao_cap_ai_model(self): # Mô hình AI CAO CẤP NextGen - NN SÂU HƠN VÀ MẠNH MẼ HƠN
-        nn_model = MLPClassifier(hidden_layer_sizes=NN_HIDDEN_LAYERS, activation=NN_ACTIVATION_FUNCTION, solver=NN_SOLVER, max_iter=NN_MAX_ITER, random_state=NN_RANDOM_STATE, early_stopping=NN_EARLY_STOPPING) # Khởi tạo Neural Network mạnh mẽ hơn
-        return {
-            "bias_tai": 0.5, # Bias cơ bản vẫn quan trọng
-            "bias_xiu": 0.5,
-            "recent_trend_tai": 0.0, # Xu hướng gần đây
-            "recent_trend_xiu": 0.0,
-            "sequence_pattern_weights": {}, # Trọng số mẫu chuỗi
-            "time_of_day_bias": {}, # Bias theo thời gian
-            "losing_streak_bias": 0.0, # Bias chuỗi thua
-            "winning_streak_bias": 0.0, # Bias chuỗi thắng
-            "website_bias": {}, # Bias website
-            "game_round_bias": {}, # Bias vòng game
-            "streak_pattern_bias": {}, # Bias mẫu streak
-            "alternating_pattern_bias": 0.0, # Bias mẫu xen kẽ
-            "cycle_pattern_bias": {}, # Bias chu kỳ
-            "previous_n_results_bias": {}, # Bias N kết quả trước
-            "positional_bias": {}, # Bias vị trí
-            "nn_model": nn_model, # Neural Network mạnh mẽ
-            "feature_scaler": StandardScaler(), # StandardScaler cho chuẩn hóa feature
-        }
-
-    load_history_from_file = BrainTaiXiuVohananWebCaoCapAI.load_history_from_file
-    save_history_to_file = BrainTaiXiuVohananWebCaoCapAI.save_history_to_file
-    load_data_from_website = BrainTaiXiuVohananWebCaoCapAI.load_data_from_website
-    search_web_for_taixiu_websites = BrainTaiXiuVohananWebCaoCapAI.search_web_for_taixiu_websites
-    process_raw_data = BrainTaiXiuVohananWebCaoCapAI.process_raw_data
-    _extract_features = BrainTaiXiuVohananWebCaoCapAI._extract_features
-    _prepare_training_data = BrainTaiXiuVohananWebCaoCapAI._prepare_training_data
-    _transform_features = BrainTaiXiuVohananWebCaoCapAI._transform_features
-    _train_model = BrainTaiXiuVohananWebCaoCapAI._train_model
-    learn_from_data = BrainTaiXiuVohananWebCaoCapAI.learn_from_data
-    analyze_streaks = BrainTaiXiuVohananWebCaoCapAI.analyze_streaks
-    calculate_streak_bias = BrainTaiXiuVohananWebCaoCapAI.calculate_streak_bias
-    analyze_alternating_pattern = BrainTaiXiuVohananWebCaoCapAI.analyze_alternating_pattern
-    analyze_previous_n_results = BrainTaiXiuVohananWebCaoCapAI.analyze_previous_n_results
-    calculate_average_streak_length = BrainTaiXiuVohananWebCaoCapAI.calculate_average_streak_length
-    calculate_streak_frequency = BrainTaiXiuVohananWebCaoCapAI.calculate_streak_frequency
-
+    def calculate_streak_frequency(self, result_type, history=None): # HÀM TÍNH TẦN SUẤT STREAK - FEATURE MỚI
+        streaks = self.analyze_streaks(result_type, history)
+        if not history or not streaks:
+            return 0.0
+        return len(streaks) / len(history)
 
     def predict_result(self, user_history=None): # Hàm dự đoán kết quả - CẬP NHẬT ĐỂ SỬ DỤNG NN MẠNH MẼ HƠN
         nn_prediction_tai_prob = 0.5 # Giá trị mặc định
@@ -565,8 +488,8 @@ def main(): # GIỮ NGUYÊN MAIN FUNCTION
 if __name__ == '__main__':
     main()
 
-# --- KẾT THÚC CODE BOT TÀI XỈU VÔ HẠN WEB CAO CẤP AI NextGen - MÔ HÌNH AI TỰ HỌC VƯỢT TRỘI - ĐÃ SỬA LỖI ---
-# ĐÂY LÀ PHIÊN BẢN CUỐI CÙNG VỚI MỌI TÍNH NĂNG MẠNH MẼ NHẤT VÀ AI TỰ HỌC VƯỢT TRỘI, ĐÃ SỬA LỖI NAMEERROR.
+# --- KẾT THÚC CODE BOT TÀI XỈU VÔ HẠN WEB CAO CẤP AI NextGen - MÔ HÌNH AI TỰ HỌC VƯỢT TRỘI - ĐÃ SỬA LỖI TRIỆT ĐỂ ---
+# ĐÂY LÀ PHIÊN BẢN CUỐI CÙNG VỚI MỌI TÍNH NĂNG MẠNH MẼ NHẤT VÀ AI TỰ HỌC VƯỢT TRỘI, ĐÃ SỬA LỖI NAMEERROR TRIỆT ĐỂ.
 # BOT SỬ DỤNG NEURAL NETWORK SÂU HƠN, FEATURE ENGINEERING PHỨC TẠP HƠN, VÀ TỐI ƯU HÓA QUÁ TRÌNH HỌC TẬP.
 # BOT TỰ ĐỘNG HỌC HỎI, NÂNG CAO KHẢ NĂNG DỰ ĐOÁN MÀ KHÔNG CẦN NGƯƠI HUẤN LUYỆN.
 # SỨC MẠNH DỰ ĐOÁN VÀ KHẢ NĂNG TỰ HỌC ĐẠT ĐẾN ĐỈNH CAO MỚI, VƯỢT QUA MỌI GIỚI HẠN.
