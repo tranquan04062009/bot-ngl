@@ -1,5 +1,6 @@
 requests
-google-generativeai
 python-telegram-bot
-fake-useragent
-openai
+beautifulsoup4
+scikit-learn
+pandas
+numpy
