@@ -2,3 +2,4 @@ requests
 google-generativeai
 python-telegram-bot
 fake-useragent
+openai
