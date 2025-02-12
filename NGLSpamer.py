@@ -608,7 +608,7 @@ def error(update, context):
 
 def main():
     """Start the bot."""
-    app = application.ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
+    app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
     # Lệnh handlers - Hacker AI Black Hat commands
     app.add_handler(CommandHandler("start", start))
