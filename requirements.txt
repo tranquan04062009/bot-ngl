@@ -1,6 +1,2 @@
 requests
-python-telegram-bot
-beautifulsoup4
-scikit-learn
-pandas
-numpy
+pyTelegramBotAPI
