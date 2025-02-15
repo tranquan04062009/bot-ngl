@@ -35,23 +35,24 @@ logger = logging.getLogger(__name__)
 # Replace with your Telegram bot token
 BOT_TOKEN = "7766543633:AAFnN9tgGWFDyApzplak0tiJTafCxciFydo"
 
-# Global variables (consider using a database for persistent storage in a real bot)
+# Các biến toàn cục (cân nhắc sử dụng cơ sở dữ liệu để lưu trữ lâu dài trong một bot thực tế)
 list_clone = []
 list_img = []
 dem = 0
 stt = 0
 stt2 = 0
+running = False  # Thêm biến để kiểm soát trạng thái chạy của bot
 
 
 # =========================== [ CLASS + FUNCTION TOOL ] ===========================
 class API_PRO5_ByNgDucPhat:
     def __init__(self):
-        # You might want to load settings from a file here instead of hardcoding.
+        # Bạn có thể muốn tải cài đặt từ một tệp ở đây thay vì mã hóa cứng.
         pass
 
     def ndp_delay_tool(self, p):
-        """Simulates delay with visual output.  Remove the visual part for Telegram."""
-        sleep(p)  # Simplest delay for Telegram.  No need for visual fluff.
+        """Mô phỏng độ trễ. Loại bỏ phần hiển thị cho Telegram."""
+        sleep(p)  # Độ trễ đơn giản nhất cho Telegram. Không cần hiệu ứng hình ảnh.
 
     def getthongtinfacebook(self, cookie: str):
         headers_get = {
@@ -77,10 +78,10 @@ class API_PRO5_ByNgDucPhat:
             ).url
             get_dulieu_profile = requests.get(url=url_profile, headers=headers_get, timeout=10).text
         except requests.exceptions.RequestException as e:
-            logger.error(f"Error during request: {e}")
+            logger.error(f"Lỗi trong quá trình yêu cầu: {e}")
             return False
         except Exception as e:
-            logger.exception(f"An unexpected error occurred: {e}")
+            logger.exception(f"Đã xảy ra lỗi không mong muốn: {e}")
             return False
 
         try:
@@ -115,10 +116,10 @@ class API_PRO5_ByNgDucPhat:
             else:
                 return False
         except requests.exceptions.RequestException as e:
-            logger.error(f"Error during upAvt request: {e}")  # Log the error
+            logger.error(f"Lỗi trong quá trình yêu cầu upAvt: {e}")  # Ghi lại lỗi
             return False
         except Exception as e:
-            logger.exception(f"An unexpected error occurred in upAvt: {e}")  # Log the error
+            logger.exception(f"Đã xảy ra lỗi không mong muốn trong upAvt: {e}")  # Ghi lại lỗi
             return False
 
     def RegPage(self, cookie, name, uid, fb_dtsg, jazoest):
@@ -127,10 +128,10 @@ class API_PRO5_ByNgDucPhat:
                 "https://story-shack-cdn-v2.glitch.me/generators/vietnamese-name-generator/male?count=2", timeout=10
             ).json()["data"][0]["name"]
         except requests.exceptions.RequestException as e:
-            logger.error(f"Error getting name: {e}")
+            logger.error(f"Lỗi khi lấy tên: {e}")
             return False, None, None
         except Exception as e:
-             logger.exception(f"An unexpected error occurred when generating name: {e}")
+             logger.exception(f"Đã xảy ra lỗi không mong muốn khi tạo tên: {e}")
              return False, None, None
         global dem
         headers_reg = {
@@ -187,49 +188,50 @@ class API_PRO5_ByNgDucPhat:
             response = requests.post(
                 "https://www.facebook.com/api/graphql/", headers=headers_reg, data=data_reg, timeout=20
             )
-            response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
+            response.raise_for_status()  # Nâng cao HTTPError cho các phản hồi xấu (4xx hoặc 5xx)
             idpage = response.json()["data"]["additional_profile_plus_create"]["additional_profile"]["id"]
             dem += 1
-            return idpage, name, namepage  # Return all relevant data
+            return idpage, name, namepage  # Trả về tất cả dữ liệu liên quan
         except requests.exceptions.RequestException as e:
-            logger.error(f"Error during RegPage request: {e}")
+            logger.error(f"Lỗi trong quá trình yêu cầu RegPage: {e}")
             return False, None, None
         except (KeyError, ValueError) as e:
-            logger.error(f"Error parsing RegPage response: {e}")
+            logger.error(f"Lỗi phân tích cú pháp phản hồi RegPage: {e}")
             return False, None, None
         except Exception as e:
-             logger.exception(f"An unexpected error occurred during regpage: {e}")
+             logger.exception(f"Đã xảy ra lỗi không mong muốn trong quá trình regpage: {e}")
              return False, None, None
 
 
 # =========================== [ TELEGRAM BOT HANDLERS ] ===========================
 async def start(update: Update, context: CallbackContext) -> None:
-    """Sends a welcome message."""
+    """Gửi một tin nhắn chào mừng."""
     await update.message.reply_text(
-        "Welcome to the Facebook Page Registration Bot!\n"
-        "Use /help to see available commands."
+        "Chào mừng đến với Bot Đăng Ký Trang Facebook!\n"
+        "Sử dụng /help để xem các lệnh khả dụng."
     )
 
 
 async def help_command(update: Update, context: CallbackContext) -> None:
-    """Displays available commands."""
+    """Hiển thị các lệnh khả dụng."""
     await update.message.reply_text(
-        "/start - Start the bot\n"
-        "/help - Show this help message\n"
-        "/add_cookie - Add a Facebook cookie\n"
-        "/add_image - Add an image link for profile picture\n"
-        "/set_page_limit <limit> - Set the number of pages to create before stopping\n"
-        "/set_delay <seconds> - Set the delay between page registrations\n"
-        "/start_registration - Start the page registration process"
+        "/start - Bắt đầu bot\n"
+        "/help - Hiển thị tin nhắn trợ giúp này\n"
+        "/add_cookie - Thêm cookie Facebook\n"
+        "/add_image - Thêm liên kết hình ảnh cho ảnh hồ sơ\n"
+        "/set_page_limit <limit> - Đặt số lượng trang cần tạo trước khi dừng\n"
+        "/set_delay <seconds> - Đặt độ trễ giữa các lần đăng ký trang\n"
+        "/start_registration - Bắt đầu quá trình đăng ký trang\n"
+        "/stop - Dừng quá trình đăng ký trang"
     )
 
 
 async def add_cookie(update: Update, context: CallbackContext) -> None:
-    """Adds a Facebook cookie to the list."""
+    """Thêm cookie Facebook vào danh sách."""
     global list_clone, stt
-    cookie = update.message.text.split(" ", 1)[1].strip()  # Get the cookie, remove leading/trailing spaces
+    cookie = update.message.text.split(" ", 1)[1].strip()  # Lấy cookie, loại bỏ khoảng trắng thừa
     if not cookie:
-        await update.message.reply_text("Please provide a cookie after the /add_cookie command.")
+        await update.message.reply_text("Vui lòng cung cấp một cookie sau lệnh /add_cookie.")
         return
 
     dpcutevcl = API_PRO5_ByNgDucPhat()
@@ -237,110 +239,130 @@ async def add_cookie(update: Update, context: CallbackContext) -> None:
     if checklive:
         stt += 1
         list_clone.append(f"{cookie}|{checklive[0]}|{checklive[1]}|{checklive[2]}|{checklive[3]}")
-        await update.message.reply_text(f"Cookie added successfully! ({checklive[0]}) Total cookies: {len(list_clone)}")
+        await update.message.reply_text(f"Đã thêm cookie thành công! ({checklive[0]}) Tổng số cookie: {len(list_clone)}")
     else:
-        await update.message.reply_text("Invalid or dead cookie.  Please check and try again.")
+        await update.message.reply_text("Cookie không hợp lệ hoặc đã hết hạn. Vui lòng kiểm tra và thử lại.")
 
 
 async def add_image(update: Update, context: CallbackContext) -> None:
-    """Adds an image link to the list."""
+    """Thêm liên kết hình ảnh vào danh sách."""
     global list_img, stt2
-    image_link = update.message.text.split(" ", 1)[1].strip()  # Get the image link, remove spaces
+    image_link = update.message.text.split(" ", 1)[1].strip()  # Lấy liên kết hình ảnh, loại bỏ khoảng trắng
     if not image_link:
-        await update.message.reply_text("Please provide an image link after the /add_image command.")
+        await update.message.reply_text("Vui lòng cung cấp một liên kết hình ảnh sau lệnh /add_image.")
         return
 
     list_img.append(image_link)
     stt2 += 1
-    await update.message.reply_text(f"Image link added! Total images: {len(list_img)}")
+    await update.message.reply_text(f"Đã thêm liên kết hình ảnh! Tổng số hình ảnh: {len(list_img)}")
 
 
 async def set_page_limit(update: Update, context: CallbackContext) -> None:
-    """Sets the page creation limit."""
+    """Đặt giới hạn tạo trang."""
     global slpage
     try:
         limit = int(context.args[0])
         slpage = limit
-        await update.message.reply_text(f"Page creation limit set to: {limit}")
+        await update.message.reply_text(f"Giới hạn tạo trang được đặt thành: {limit}")
     except (IndexError, ValueError):
-        await update.message.reply_text("Usage: /set_page_limit <number>")
+        await update.message.reply_text("Cách sử dụng: /set_page_limit <số>")
 
 
 async def set_delay(update: Update, context: CallbackContext) -> None:
-    """Sets the delay between page registrations."""
+    """Đặt độ trễ giữa các lần đăng ký trang."""
     global delay
     try:
         delay = int(context.args[0])
-        await update.message.reply_text(f"Delay set to: {delay} seconds")
+        await update.message.reply_text(f"Độ trễ được đặt thành: {delay} giây")
     except (IndexError, ValueError):
-        await update.message.reply_text("Usage: /set_delay <seconds>")
+        await update.message.reply_text("Cách sử dụng: /set_delay <giây>")
 
 async def start_registration(update: Update, context: CallbackContext) -> None:
-    """Starts the page registration process."""
-    global list_clone, list_img, dem, slpage, delay
+    """Bắt đầu quá trình đăng ký trang."""
+    global list_clone, list_img, dem, slpage, delay, running
     dpcutevcl = API_PRO5_ByNgDucPhat()
 
+    if running:
+        await update.message.reply_text("Quá trình đăng ký đã đang chạy. Vui lòng dừng trước khi bắt đầu lại.")
+        return
+
     if not list_clone:
-        await update.message.reply_text("No cookies added. Please add cookies using /add_cookie.")
+        await update.message.reply_text("Chưa có cookie nào được thêm. Vui lòng thêm cookie bằng /add_cookie.")
         return
 
     if not list_img:
-        await update.message.reply_text("No image links added. Please add image links using /add_image.")
+        await update.message.reply_text("Chưa có liên kết hình ảnh nào được thêm. Vui lòng thêm liên kết hình ảnh bằng /add_image.")
         return
 
-    if slpage == 0:  #Check if limit has been set
-        await update.message.reply_text("Please set a page creation limit using /set_page_limit <limit>")
+    if slpage == 0:  # Kiểm tra xem giới hạn đã được đặt chưa
+        await update.message.reply_text("Vui lòng đặt giới hạn tạo trang bằng /set_page_limit <giới hạn>")
         return
 
-    if delay == 0: #Check if delay has been set
-        await update.message.reply_text("Please set a delay between page registrations using /set_delay <seconds>")
+    if delay == 0:  # Kiểm tra xem độ trễ đã được đặt chưa
+        await update.message.reply_text("Vui lòng đặt độ trễ giữa các lần đăng ký trang bằng /set_delay <giây>")
         return
+
+    running = True  # Đặt trạng thái đang chạy
+
     await update.message.reply_text(
-        f"Starting page registration...\n"
-        f"Using {len(list_clone)} cookies and {len(list_img)} images.\n"
-        f"Creating up to {slpage} pages with a delay of {delay} seconds between each."
+        f"Bắt đầu đăng ký trang...\n"
+        f"Sử dụng {len(list_clone)} cookie và {len(list_img)} hình ảnh.\n"
+        f"Tạo tối đa {slpage} trang với độ trễ {delay} giây giữa mỗi trang."
     )
 
-    for dulieuclone in list_clone:
-        cookie, name, uid, fb_dtsg, jazoest = dulieuclone.split("|")
-        result = dpcutevcl.RegPage(cookie, name, uid, fb_dtsg, jazoest)
+    try:
+        for dulieuclone in list_clone:
+            if not running:  # Kiểm tra trạng thái dừng
+                await update.message.reply_text("Đã dừng quá trình đăng ký.")
+                return
 
-        if result:
-            idpage, fb_name, page_name = result # unpack the tuple
+            cookie, name, uid, fb_dtsg, jazoest = dulieuclone.split("|")
+            result = dpcutevcl.RegPage(cookie, name, uid, fb_dtsg, jazoest)
 
-            link_anh = random.choice(list_img)
-            up_result = dpcutevcl.UpAvt(cookie, idpage, link_anh)
+            if result:
+                idpage, fb_name, page_name = result  # Mở gói tuple
 
-            if up_result:
-                await update.message.reply_text(
-                    f"Created page: {page_name} (ID: {idpage})\n"
-                    f"Updated profile picture successfully."
-                )
+                link_anh = random.choice(list_img)
+                up_result = dpcutevcl.UpAvt(cookie, idpage, link_anh)
+
+                if up_result:
+                    await update.message.reply_text(
+                        f"Đã tạo trang: {page_name} (ID: {idpage})\n"
+                        f"Đã cập nhật ảnh hồ sơ thành công."
+                    )
+                else:
+                    await update.message.reply_text(
+                        f"Đã tạo trang: {page_name} (ID: {idpage})\n"
+                        f"Không thể cập nhật ảnh hồ sơ."
+                    )
             else:
-                await update.message.reply_text(
-                    f"Created page: {page_name} (ID: {idpage})\n"
-                    f"Failed to update profile picture."
-                )
-        else:
-             await update.message.reply_text(f"Failed to register page for {name}.  Cookie may be blocked or invalid.")
+                await update.message.reply_text(f"Không thể đăng ký trang cho {name}. Cookie có thể bị chặn hoặc không hợp lệ.")
 
-        dpcutevcl.ndp_delay_tool(delay)
-        dem += 1
+            dpcutevcl.ndp_delay_tool(delay)
+            dem += 1
 
-        if dem >= slpage:
-            await update.message.reply_text(f"Reached page creation limit ({slpage}). Stopping.")
-            return
+            if dem >= slpage:
+                await update.message.reply_text(f"Đã đạt đến giới hạn tạo trang ({slpage}). Dừng lại.")
+                break  # Dừng vòng lặp nếu đạt đến giới hạn
+    finally:
+        running = False  # Đảm bảo rằng trạng thái đang chạy được đặt thành False sau khi hoàn thành hoặc dừng lại
+        await update.message.reply_text("Quá trình đăng ký hoàn tất.")
 
-    await update.message.reply_text("All cookies processed.")
+
+async def stop(update: Update, context: CallbackContext) -> None:
+    """Dừng quá trình đăng ký."""
+    global running
+    running = False
+    await update.message.reply_text("Đang dừng quá trình đăng ký...")
 
 
 # =========================== [ MAIN FUNCTION ] ===========================
 def main() -> None:
-    """Start the bot."""
-    # Create the Application and pass it your bot's token.
+    """Bắt đầu bot."""
+    # Tạo Application và chuyển token bot của bạn cho nó.
     application = Application.builder().token(BOT_TOKEN).build()
 
-    # on different commands - answer in Telegram
+    # trên các lệnh khác nhau - trả lời trong Telegram
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("add_cookie", add_cookie))
@@ -348,8 +370,9 @@ def main() -> None:
     application.add_handler(CommandHandler("set_page_limit", set_page_limit))
     application.add_handler(CommandHandler("set_delay", set_delay))
     application.add_handler(CommandHandler("start_registration", start_registration))
+    application.add_handler(CommandHandler("stop", stop))
 
-    # Run the bot until the user presses Ctrl-C
+    # Chạy bot cho đến khi người dùng nhấn Ctrl-C
     application.run_polling()
 
 
