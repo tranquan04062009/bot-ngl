@@ -1,25 +1,30 @@
-import logging
+import sys
 import os
 import requests
 import threading
 import time
 import json
 import random
+from time import strftime
+import telebot
+from telebot import types
+import uuid
+import logging  # Import the logging module
 
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, CallbackContext
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Constants
-__version__ = 'v2-telegram'
-__Copyright__ = 'Trần Quân✔️'
+# Replace with your Telegram bot token
+BOT_TOKEN = "7766543633:AAFnN9tgGWFDyApzplak0tiJTafCxciFydo"  # REPLACE
+bot = telebot.TeleBot(BOT_TOKEN)
 
-# Enable logging
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO
-)
-logger = logging.getLogger(__name__)
+# Replace with your Telegram admin user ID. Use an integer.
+ADMIN_USER_ID = 6940071938  # Example: Replace with your actual admin ID
 
-# User Agents
+USER_SHARE_LIMIT_PER_DAY = 10000
+user_share_counts = {}  # Keep track of shares per user per day
+
+# Improved User Agent Rotation (including mobile devices)
 user_agents = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0",
@@ -33,248 +38,487 @@ user_agents = [
     "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.259 Mobile Safari/537.36"
 ]
 
-# Global variables
-sharing_active = False
-all_tokens = []
-id_share = None
-delay = 10
-total_share_limit = 0
-shared_count = 0
-cookie_file_path = None
+# Global stop flag for each chat
+stop_sharing_flags = {}
+successful_shares = 0  # Global variable to track successful shares
+token_status = {}  # Track status of each token
+gome_token = []
 
-# --- Helper Functions ---
-def get_token(input_file):
-    tokens = []
+# Proxy rotation (replace with your proxy list/source)
+proxies = [
+    None  # Direct connection. Leave this EVEN if using proxies!
+    # "http://user:pass@proxy1.example.com:8080",
+    # "http://user:pass@proxy2.example.com:8080",
+    # ... Add your proxies here
+]
+
+# Session Management
+token_sessions = {}  # Store requests.Session() objects for each token
+
+# Rate limiting settings (adaptive)
+BASE_REQUESTS_PER_MINUTE = 30  # Starting point. Adjust!
+REQUESTS_PER_MINUTE_VARIATION = 10  # Add some randomness
+request_timestamps = {}  # per token rate limiting
+
+# Thread pool
+thread_pool = threading.BoundedSemaphore(value=10)  # Limit to 10 threads
+
+def get_random_proxy():
+    return random.choice(proxies)
+
+def clear():
+    if sys.platform.startswith('win'):
+        os.system('cls')
+    else:
+        os.system('clear')
+
+# Function to enforce rate limiting (adaptive per token)
+def rate_limit(token):
+    if token not in request_timestamps:
+        request_timestamps[token] = []  # init list for that token
+
+    current_time = time.time()
+    while request_timestamps[token] and request_timestamps[token][0] <= current_time - 60:
+        request_timestamps[token].pop(0)
+
+    # Adaptive Rate Limiting: Adjust based on success
+    if token_status.get(token, "live") == "live":
+        requests_per_minute = BASE_REQUESTS_PER_MINUTE + random.randint(-REQUESTS_PER_MINUTE_VARIATION,
+                                                                           REQUESTS_PER_MINUTE_VARIATION)
+    else:  # slow down failing tokens.
+        requests_per_minute = BASE_REQUESTS_PER_MINUTE // 2 + random.randint(
+            -REQUESTS_PER_MINUTE_VARIATION // 2, REQUESTS_PER_MINUTE_VARIATION // 2)
+
+    if len(request_timestamps[token]) >= requests_per_minute:
+        sleep_time = 60 - (current_time - request_timestamps[token][0])
+        time.sleep(max(0, sleep_time))  # Ensure sleep time is not negative
+
+    request_timestamps[token].append(current_time)
+
+# Generate a random device ID (UUID4)
+def generate_device_id():
+    return str(uuid.uuid4())
+
+# Robust Header Generation Function
+def generate_headers(cookie, device_id):
+    user_agent = random.choice(user_agents)
+    accept_language = random.choice([
+        "vi-VN,vi;q=0.9,fr-FR;q=0.8,fr;q=0.7,en-US;q=0.6,en;q=0.5",
+        "en-US,en;q=0.9",
+        "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7"
+    ])  # Vary language preferences
+
+    headers = {
+        'authority': 'business.facebook.com',
+        'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+        'accept-language': accept_language,
+        'cache-control': 'max-age=0',
+        'cookie': cookie,
+        'referer': 'https://www.facebook.com/',
+        'sec-ch-ua': '".Not/A)Brand";v="99", "Google Chrome";v="103", "Chromium";v="103"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"Linux"',
+        'sec-fetch-dest': 'document',
+        'sec-fetch-mode': 'navigate',
+        'sec-fetch-site': 'same-origin',
+        'sec-fetch-user': '?1',
+        'upgrade-insecure-requests': '1',
+        'user-agent': user_agent,
+        'x-fb-device-group': '4481',  # Add realistic Facebook headers
+        'x-fb-friendly-name': 'ViewerBookmarksListQuery',
+        'x-fb-http-engine': 'Liger'
+    }
+    return headers
+
+def get_token(input_file, chat_id):
+    global gome_token
+    gome_token = []
+    all_tokens = []
     for cookie in input_file:
         cookie = cookie.strip()
         if not cookie:
             continue
-        header_ = {
-            'authority': 'business.facebook.com',
-            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
-            'accept-language': 'vi-VN,vi;q=0.9,fr-FR;q=0.8,fr;q=0.7,en-US;q=0.6,en;q=0.5',
-            'cache-control': 'max-age=0',
-            'cookie': cookie,
-            'referer': 'https://www.facebook.com/',
-            'sec-ch-ua': '".Not/A)Brand";v="99", "Google Chrome";v="103", "Chromium";v="103"',
-            'sec-ch-ua-mobile': '?0',
-            'sec-ch-ua-platform': '"Linux"',
-            'sec-fetch-dest': 'document',
-            'sec-fetch-mode': 'navigate',
-            'sec-fetch-site': 'same-origin',
-            'sec-fetch-user': '?1',
-            'upgrade-insecure-requests': '1',
-            'user-agent': random.choice(user_agents)
-        }
+
+        device_id = generate_device_id()
+        headers = generate_headers(cookie, device_id)
+        cookie_token = f'{cookie}|None|{device_id}'  # initial value. None represents the absence of token at this time
+
         try:
-            home_business = requests.get('https://business.facebook.com/content_management', headers=header_, timeout=15).text
+            session = requests.Session()  # Create a new session for each token
+            token_sessions[cookie_token] = session  # store session in a dictionary indexed by "cookie|device_id"
+
+            rate_limit(cookie_token)  # Rate limit token retrieval.
+            response = session.get('https://business.facebook.com/content_management', headers=headers, timeout=15, proxies={'http': get_random_proxy(), 'https': get_random_proxy()})  # Use session
+            response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
+
+            home_business = response.text
             if 'EAAG' in home_business:
                 token = home_business.split('EAAG')[1].split('","')[0]
-                cookie_token = f'{cookie}|EAAG{token}'
-                tokens.append(cookie_token)
+                cookie_token = f'{cookie}|EAAG{token}|{device_id}'
+                all_tokens.append(cookie_token)
+                token_status[cookie_token] = "live"
+                logging.info(f"Token retrieved successfully for cookie: {cookie[:50]}...")
             else:
-                logging.warning(f"Could not get token from cookie: {cookie[:50]}... Cookie may be invalid.")
-        except requests.exceptions.RequestException as e:
-            logging.error(f"Request error getting token for cookie: {cookie[:50]}... {e}")
-        except Exception as e:
-            logging.exception(f"Unexpected error getting token for cookie: {cookie[:50]}... {e}")
-    return tokens
+                token_status[cookie_token] = "die"  # status die at token retrieval
+                logging.warning(f"Could not retrieve token from cookie: {cookie[:50]}... Cookie may be invalid.")
+                bot.send_message(chat_id, f"Không thể lấy token từ cookie: {cookie[:50]}... Cookie có thể không hợp lệ.")
 
-def share(tach, id_share):
+
+        except requests.exceptions.RequestException as e:
+            token_status[cookie_token] = "die"
+            logging.error(f"Error retrieving token for cookie: {cookie[:50]}... {e}")
+            bot.send_message(chat_id, f"Lỗi khi lấy token cho cookie: {cookie[:50]}... Dừng tool.")
+            stop_sharing_flags[chat_id] = True
+            if cookie_token in token_sessions:
+                token_sessions[cookie_token].close()
+                del token_sessions[cookie_token]
+            return []  # Stop immediately
+
+        except Exception as e:
+            token_status[cookie_token] = "die"
+            logging.exception(f"Unexpected error retrieving token for cookie: {cookie[:50]}... {e}")
+            bot.send_message(chat_id, f"Lỗi không mong muốn khi lấy token cho cookie: {cookie[:50]}... Dừng tool.")
+            stop_sharing_flags[chat_id] = True
+            if cookie_token in token_sessions:
+                token_sessions[cookie_token].close()
+                del token_sessions[cookie_token]
+            return []  # Stop immediately
+
+    gome_token = all_tokens # update global token list
+
+    return all_tokens
+
+def share(tach, id_share, chat_id):
     cookie = tach.split('|')[0]
     token = tach.split('|')[1]
-    he = {
-        'accept': '*/*',
-        'accept-encoding': 'gzip, deflate',
-        'connection': 'keep-alive',
-        'content-length': '0',
-        'cookie': cookie,
-        'host': 'graph.facebook.com',
-        'user-agent': random.choice(user_agents),
-        'referer': f'https://m.facebook.com/{id_share}'
-    }
+    device_id = tach.split('|')[2]  # Get device ID from token
+    headers = generate_headers(cookie, device_id)  # consistent headers
+
+    session = token_sessions.get(tach)  # Get the session object.
+
+    if not session:  # should never happen but just in case
+        logging.warning(f"No session found for token: {tach[:50]}. Creating new session (this is unexpected)")
+        session = requests.Session()  # create ad hoc, but this should be fixed
+        token_sessions[tach] = session  # save adhoc
+
     try:
-        res = requests.post(f'https://graph.facebook.com/me/feed?link=https://m.facebook.com/{id_share}&published=0&access_token={token}', headers=he, timeout=10).json()
+        rate_limit(tach)  # Rate Limit per token
+
+        data = {'link': f'https://m.facebook.com/{id_share}', 'published': '0', 'access_token': token, 'device_id': device_id}
+        response = session.post(f'https://graph.facebook.com/me/feed', headers=headers, data=data, timeout=10, proxies={'http': get_random_proxy(), 'https': get_random_proxy()})
+        response.raise_for_status()  # check for HTTP errors
+        res = response.json()
+
         if 'id' in res:
+            token_status[tach] = "live"  # Share was success. Keep it live.
+            logging.info(f"Share successful for ID: {id_share} - Token: {tach[:50]}...")
             return True
         else:
-            logging.error(f"Share failed: ID: {id_share} - Response: {res}")
+            token_status[tach] = "die"  # Token is dead
+            logging.warning(f"Share failed for ID: {id_share} - Token: {tach[:50]}... Response: {res}")
+            bot.send_message(chat_id, f"[!] Share thất bại: ID: {id_share} - Token Die - Dừng tool.")
+            stop_sharing_flags[chat_id] = True
             return False
+
     except requests.exceptions.RequestException as e:
-        logging.error(f"Request error sharing: ID: {id_share} - {e}")
-        return False
-    except Exception as e:
-        logging.exception(f"Unexpected error sharing: ID: {id_share} - {e}")
+        token_status[tach] = "die"
+        logging.error(f"Request error sharing ID: {id_share} - Token: {tach[:50]}... {e}")
+        bot.send_message(chat_id, f"[!] Lỗi request share: ID: {id_share} - {e} - Dừng tool.")
+        stop_sharing_flags[chat_id] = True
         return False
 
-def share_thread(tach, id_share, stt, context: CallbackContext):
-    global shared_count
-    if share(tach, id_share):
-        logger.info(f'[{stt}] SHARE SUCCESSFUL ID {id_share}')
-        context.bot.send_message(chat_id=context.job.chat_id, text=f'[{stt}] SHARE SUCCESSFUL ID {id_share}')
+    except Exception as e:
+        token_status[tach] = "die"
+        logging.exception(f"Unexpected error sharing ID: {id_share} - Token: {tach[:50]}... {e}")
+        bot.send_message(chat_id, f"[!] Lỗi không mong muốn khi share: ID: {id_share} - {e} - Dừng tool.")
+        stop_sharing_flags[chat_id] = True
+        return False
+
+def share_thread_telegram(tach, id_share, stt, chat_id, message_id):
+    if stop_sharing_flags.get(chat_id, False):
+        return False  # Stop sharing
+    if share(tach, id_share, chat_id):
+        return True
     else:
-          context.bot.send_message(chat_id=context.job.chat_id, text=f'[{stt}] SHARE FAILED ID {id_share}')
-    shared_count +=1
+        return False
 
-# --- Telegram Bot Handlers ---
+# Telegram Bot Handlers
+share_data = {}  # Store user-specific data
 
-async def start(update: Update, context: CallbackContext):
-    """Sends a welcome message."""
-    text = (
-        f"Chào mừng bạn đến với Telegram Bot Share Facebook!\n\n"
-        f"Sử dụng lệnh /share để bắt đầu chia sẻ bài viết.\n"
-        f"Gửi file cookies, ID bài viết, delay và tổng số lượng share theo yêu cầu.\n"
-        f"Sử dụng lệnh /stop để dừng quá trình chia sẻ."
-    )
-    await update.message.reply_text(text)
-
-async def share_command(update: Update, context: CallbackContext):
-    """Starts the sharing process."""
-    global sharing_active, all_tokens, id_share, delay, total_share_limit, shared_count, cookie_file_path
-    if sharing_active:
-        await update.message.reply_text("Một tiến trình share đang chạy. Vui lòng dừng nó trước khi bắt đầu tiến trình mới.")
-        return
-
-    sharing_active = True
-    all_tokens = []
-    id_share = None
-    delay = 10
-    total_share_limit = 0
-    shared_count = 0
-    cookie_file_path = None
-
-    await update.message.reply_text("Vui lòng gửi file chứa cookies.")
-    return
-
-async def process_file(update: Update, context: CallbackContext):
-    """Processes the cookie file."""
-    global cookie_file_path
+@bot.message_handler(commands=['start'])
+def start(message):
     try:
-        file = await context.bot.get_file(update.message.document.file_id)
-        cookie_file_path = f"cookies_{update.message.chat_id}.txt"
-        await file.download_to_drive(cookie_file_path)
-        await update.message.reply_text("File cookies đã được nhận. Vui lòng nhập ID bài viết cần share.")
+        bot.reply_to(message, "Chào mừng! Sử dụng /share để bắt đầu.")
     except Exception as e:
-        await update.message.reply_text(f"Lỗi khi xử lý file: {e}")
-        sharing_active = False
+        logging.exception(f"Error handling /start command: {e}")
+
+@bot.message_handler(commands=['share'])
+def share_command(message):
+    chat_id = message.chat.id
+    user_id = message.from_user.id
+    share_data[chat_id] = {}  # Initialize data for the user
+
+    # Check user's daily share count
+    today = strftime("%Y-%m-%d")
+    if user_id not in user_share_counts:
+        user_share_counts[user_id] = {}
+    if today not in user_share_counts[user_id]:
+        user_share_counts[user_id][today] = 0
+
+    if user_id != ADMIN_USER_ID and user_share_counts[user_id][today] >= USER_SHARE_LIMIT_PER_DAY:
+        try:
+            bot.send_message(chat_id, f"Bạn đã đạt giới hạn {USER_SHARE_LIMIT_PER_DAY} share hôm nay. Vui lòng thử lại vào ngày mai.")
+        except Exception as e:
+            logging.exception(f"Error sending limit message: {e}")
         return
 
-async def process_id(update: Update, context: CallbackContext):
-    """Processes the share ID."""
-    global id_share
-    id_share = update.message.text
-    await update.message.reply_text("Đã nhận ID. Vui lòng nhập delay giữa các lần share (giây).")
-
-async def process_delay(update: Update, context: CallbackContext):
-    """Processes the delay."""
-    global delay
+    # Display link and other information
     try:
-        delay = int(update.message.text)
+        bot.send_message(chat_id, "Thông tin bot:\n- Bot này được phát triển bởi [Your Name/Organization]\n- Hỗ trợ share bài viết lên trang cá nhân.\n- Liên hệ: [Your Contact Information/Link]")
+    except Exception as e:
+        logging.exception(f"Error sending bot info: {e}")
+
+    # Create a stop button
+    markup = types.InlineKeyboardMarkup()
+    stop_button = types.InlineKeyboardButton("Dừng Share", callback_data="stop_share")
+    markup.add(stop_button)
+    try:
+        bot.send_message(chat_id, "Vui lòng gửi file chứa cookie (cookies.txt).", reply_markup=markup)
+        bot.register_next_step_handler(message, process_cookie_file)
+    except Exception as e:
+        logging.exception(f"Error sending cookie file request: {e}")
+
+@bot.callback_query_handler(func=lambda call: call.data == "stop_share")
+def stop_share_callback(call):
+    chat_id = call.message.chat.id
+    stop_sharing_flags[chat_id] = True  # Set the stop flag
+    try:
+        bot.send_message(chat_id, "Đã nhận lệnh dừng share. Vui lòng chờ quá trình hoàn tất.")
+    except Exception as e:
+        logging.exception(f"Error sending stop confirmation: {e}")
+
+    global gome_token
+    gome_token.clear()
+
+    # close sessions (cleanup resources)
+    global token_sessions
+    for session in token_sessions.values():
+        session.close()
+    token_sessions = {}  # reset
+
+def process_cookie_file(message):
+    chat_id = message.chat.id
+    user_id = message.from_user.id
+    try:
+        if message.document is None:
+            bot.reply_to(message, "Vui lòng gửi file chứa cookie (cookies.txt).")
+            return
+
+        file_info = bot.get_file(message.document.file_id)
+        downloaded_file = bot.download_file(file_info.file_path)
+        file_content = downloaded_file.decode('utf-8').splitlines()
+        share_data[chat_id]['cookie_file'] = file_content
+        bot.send_message(chat_id, "Đã nhận file cookie. Vui lòng nhập ID bài viết cần share.")
+        bot.register_next_step_handler(message, process_id)
+    except Exception as e:
+        logging.exception(f"Error processing cookie file: {e}")
+        bot.reply_to(message, "Có lỗi xảy ra khi xử lý file cookie. Vui lòng thử lại.")
+        if chat_id in share_data:
+            del share_data[chat_id]  # Clear data
+
+def process_id(message):
+    chat_id = message.chat.id
+    id_share = message.text.strip()
+    if not id_share.isdigit():
+        bot.reply_to(message, "ID không hợp lệ. Vui lòng nhập lại ID bài viết cần share.")
+        bot.register_next_step_handler(message, process_id)
+        return
+
+    share_data[chat_id]['id_share'] = id_share
+    bot.send_message(chat_id, "Vui lòng nhập delay giữa các lần share (giây).")
+    bot.register_next_step_handler(message, process_delay)
+
+def process_delay(message):
+    chat_id = message.chat.id
+    delay_str = message.text.strip()
+    try:
+        delay = int(delay_str)
         if delay < 0:
             raise ValueError
-        await update.message.reply_text("Đã nhận delay. Vui lòng nhập tổng số lượng share (0 để không giới hạn).")
     except ValueError:
-        await update.message.reply_text("Delay phải là một số nguyên dương hợp lệ.")
-        sharing_active = False
+        bot.reply_to(message, "Delay không hợp lệ. Vui lòng nhập lại delay (giây) là một số dương.")
+        bot.register_next_step_handler(message, process_delay)
+        return
 
-async def process_total_shares(update: Update, context: CallbackContext):
-     """Processes the total number of shares and starts sharing."""
-     global total_share_limit, sharing_active, all_tokens, id_share, delay, shared_count, cookie_file_path
-     try:
-        total_share_limit = int(update.message.text)
+    share_data[chat_id]['delay'] = delay
+    bot.send_message(chat_id, "Vui lòng nhập tổng số lượng share (0 để không giới hạn).")
+    bot.register_next_step_handler(message, process_total_shares)
+
+def process_total_shares(message):
+    chat_id = message.chat.id
+    user_id = message.from_user.id
+    total_share_limit_str = message.text.strip()
+    try:
+        total_share_limit = int(total_share_limit_str)
         if total_share_limit < 0:
             raise ValueError
-
-        # Load cookies and get tokens
-        try:
-            with open(cookie_file_path, 'r') as f:
-                input_file = f.read().split('\n')
-            all_tokens = get_token(input_file)
-            if not all_tokens:
-                await update.message.reply_text("Không tìm thấy token hợp lệ nào trong file cookie.")
-                sharing_active = False
-                return
-        except FileNotFoundError:
-            await update.message.reply_text("Không tìm thấy file cookies.")
-            sharing_active = False
-            return
-        except Exception as e:
-            await update.message.reply_text(f"Lỗi khi đọc file cookies: {e}")
-            sharing_active = False
-            return
-
-        await update.message.reply_text(f"Tìm thấy {len(all_tokens)} token hợp lệ. Bắt đầu share...")
-        shared_count = 0
-        stt = 0
-
-        # Start sharing in a separate thread
-        context.job_queue.run_repeating(
-            callback=start_sharing,
-            interval=delay,
-            first=1,
-            context={'chat_id': update.message.chat_id, 'stt': stt}
-        )
-
-     except ValueError:
-        await update.message.reply_text("Tổng số lượng share phải là một số nguyên không âm hợp lệ.")
-        sharing_active = False
-
-async def start_sharing(context: CallbackContext):
-    """Shares posts using available tokens."""
-    global sharing_active, all_tokens, id_share, total_share_limit, shared_count
-    job = context.job
-    stt = context.job.context['stt']
-    if not sharing_active:
-        await context.bot.send_message(job.chat_id, text="Tiến trình share đã dừng.")
-        job.schedule_removal()  # Remove the job from the queue
+    except ValueError:
+        bot.reply_to(message, "Số lượng share không hợp lệ. Vui lòng nhập lại tổng số lượng share (0 để không giới hạn) là một số dương.")
+        bot.register_next_step_handler(message, process_total_shares)
         return
 
+    share_data[chat_id]['total_share_limit'] = total_share_limit
+
+    # Limit total shares based on user role
+    if user_id != ADMIN_USER_ID and total_share_limit > USER_SHARE_LIMIT_PER_DAY:
+        total_share_limit = USER_SHARE_LIMIT_PER_DAY
+        bot.send_message(chat_id, f"Bạn không phải là admin. Số lượng share sẽ bị giới hạn ở mức {USER_SHARE_LIMIT_PER_DAY}.")
+        share_data[chat_id]['total_share_limit'] = total_share_limit
+
+    start_sharing(chat_id)
+
+def start_sharing(chat_id):
+    data = share_data.get(chat_id)
+    user_id = bot.get_chat(chat_id).id  # Get user ID safely
+
+    if not data:
+        bot.send_message(chat_id, "Dữ liệu không đầy đủ. Vui lòng bắt đầu lại bằng lệnh /share.")
+        return
+
+    input_file = data['cookie_file']
+    id_share = data['id_share']
+    delay = data['delay']
+    total_share_limit = data['total_share_limit']
+
+    # Get tokens, stop if fails
+    all_tokens = get_token(input_file, chat_id)
+    if not all_tokens:
+        # get_token already sent a message to the user
+        del share_data[chat_id]
+        return
+
+    total_live = len(all_tokens)
+
+    if total_live == 0:
+        bot.send_message(chat_id, "Không tìm thấy token hợp lệ nào.")
+        del share_data[chat_id]
+        return
+
+    bot.send_message(chat_id, f"Tìm thấy {total_live} token hợp lệ.")
+
+    # Send initial message with share success count and store its ID
+    markup = types.InlineKeyboardMarkup()
+    stop_button = types.InlineKeyboardButton("Dừng Share", callback_data="stop_share")
+    markup.add(stop_button)
+    initial_message = bot.send_message(chat_id, f"Bắt đầu share...\nĐang xử lý: {0} share thành công", reply_markup=markup)
+    message_id = initial_message.message_id  # Store the message ID
+
+    share_data[chat_id]['message_id'] = message_id  # Store message_id in share_data
+
+    stt = 0
+    shared_count = 0
+    global successful_shares
+    successful_shares = 0  # Reset successful shares count
+    continue_sharing = True
+    stop_sharing_flags[chat_id] = False  # Reset stop flag at start
+
+    while continue_sharing:
+        for tach in all_tokens:
+            if stop_sharing_flags.get(chat_id, False):
+                continue_sharing = False
+                break  # Exit inner loop
+
+            # Daily Limit Check inside the loop
+            today = strftime("%Y-%m-%d")
+            if user_id != ADMIN_USER_ID and user_share_counts[user_id][today] >= USER_SHARE_LIMIT_PER_DAY:
+                bot.send_message(chat_id, f"Bạn đã đạt giới hạn {USER_SHARE_LIMIT_PER_DAY} share hôm nay. Vui lòng thử lại vào ngày mai.")
+                continue_sharing = False
+                break
+
+            if token_status.get(tach, "live") == "die":  # Skip dead tokens
+                continue
+
+            stt += 1
+            try:
+                thread_pool.acquire()  # Acquire a slot from the thread pool
+                thread = threading.Thread(target=process_share, args=(tach, id_share, stt, chat_id, message_id, user_id))
+                thread.daemon = True  # Allow the main thread to exit even if this thread is running
+                thread.start()
+            except Exception as e:
+                logging.exception(f"Error starting thread: {e}")
+            finally:
+                time.sleep(delay)
+                shared_count += 1
+
+                if total_share_limit > 0 and shared_count >= total_share_limit:
+                    continue_sharing = False
+                    break
+
+                if stop_sharing_flags.get(chat_id, False):
+                    continue_sharing = False
+                    break
+
+    # Wait for all threads to complete
+    while threading.active_count() > 1:
+        time.sleep(0.1)
+
+    bot.send_message(chat_id, "Quá trình share hoàn tất.")
     if total_share_limit > 0 and shared_count >= total_share_limit:
-        await context.bot.send_message(job.chat_id, text=f"Đã đạt giới hạn share là {total_share_limit} shares.")
-        sharing_active = False
-        job.schedule_removal()
-        return
+        bot.send_message(chat_id, f"Đạt giới hạn share là {total_share_limit} shares.")
+    bot.send_message(chat_id, f"Tổng cộng {successful_shares} share thành công.")  # Final count
+
+    del share_data[chat_id]
+    global gome_token
+    gome_token.clear()
+    stop_sharing_flags[chat_id] = False  # Reset
+
+    # Cleanup sessions
+    global token_sessions
+    for session in token_sessions.values():
+        session.close()
+    token_sessions = {}  # Reset
+
+def process_share(tach, id_share, stt, chat_id, message_id, user_id):
+    global successful_shares
+    global user_share_counts  # access global variable
     try:
-        tach = all_tokens[stt % len(all_tokens)]  # Cycle through tokens
-        thread = threading.Thread(target=share_thread, args=(tach, id_share, stt, context))
-        thread.start()
-        stt+=1
-        context.job.context['stt'] = stt
+        if stop_sharing_flags.get(chat_id, False):
+            return  # Stop immediately
 
-    except Exception as e:
-        await context.bot.send_message(job.chat_id, text=f"Lỗi trong quá trình share: {e}")
-        sharing_active = False
-        job.schedule_removal()
+        success = share_thread_telegram(tach, id_share, stt, chat_id, message_id)
+        if not success:
+            # share() function handles stopping when share fails
+            return
 
-async def stop(update: Update, context: CallbackContext):
-    """Stops the sharing process."""
-    global sharing_active
-    sharing_active = False
-    await update.message.reply_text("Đã dừng tiến trình share.")
-    context.job_queue.stop()
+        # If share was successful:
+        successful_shares += 1
 
-def main():
-    """Starts the bot."""
+        # Update daily share count
+        today = strftime("%Y-%m-%d")
+        if user_id not in user_share_counts:
+            user_share_counts[user_id] = {}
+        if today not in user_share_counts[user_id]:
+            user_share_counts[user_id][today] = 0
+        user_share_counts[user_id][today] += 1
 
-    TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN") # Replace with your bot token
-    if not TOKEN:
-        print("Please set the TELEGRAM_BOT_TOKEN environment variable.")
-        return
+        # Edit the message to show the updated count
+        try:
+            markup = types.InlineKeyboardMarkup()
+            stop_button = types.InlineKeyboardButton("Dừng Share", callback_data="stop_share")
+            markup.add(stop_button)
 
-    application = ApplicationBuilder().token(TOKEN).build()
+            bot.edit_message_text(chat_id=chat_id, message_id=message_id,
+                                  text=f"Bắt đầu share...\nĐang xử lý: {successful_shares} share thành công",
+                                  reply_markup=markup)  # Include stop button in edit
+        except Exception as e:
+            logging.exception(f"Error editing message: {e}")
+    finally:
+        thread_pool.release()  # Release the slot back to the thread pool
 
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("share", share_command))
-    application.add_handler(CommandHandler("stop", stop))
-    application.add_handler(MessageHandler(filters.Document.ALL, process_file))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND,
-                                           lambda update, context: (
-                                               process_id(update, context) if id_share is None else (
-                                                   process_delay(update, context) if delay == 10 else process_total_shares(update, context)
-                                               )
-                                           )))
-
-    application.run_polling()
-
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    try:
+        print("Bot is running...")
+        bot.infinity_polling()
+    except KeyboardInterrupt:
+        print("Bot stopped.")
+        sys.exit()
