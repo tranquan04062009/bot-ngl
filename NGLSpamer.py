@@ -35,9 +35,25 @@ user_agents = [
 # Global stop flag for each chat
 stop_sharing_flags = {}
 successful_shares = 0  # Global variable to track successful shares
-
+token_status = {} # Track status of each token
 gome_token = []
-def get_token(input_file):
+
+# Proxy rotation (replace with your proxy list/source)
+proxies = [
+    None # Direct connection
+]
+
+def get_random_proxy():
+    return random.choice(proxies)
+
+def clear():
+    if(sys.platform.startswith('win')):
+        os.system('cls')
+    else:
+        os.system('clear')
+
+def get_token(input_file, chat_id):
+    global gome_token
     gome_token = []
     for cookie in input_file:
         cookie = cookie.strip()
@@ -61,20 +77,34 @@ def get_token(input_file):
             'user-agent': random.choice(user_agents)
         }
         try:
-            home_business = requests.get('https://business.facebook.com/content_management', headers=header_, timeout=15).text
+            response = requests.get('https://business.facebook.com/content_management', headers=header_, timeout=15, proxies={'http': get_random_proxy(), 'https': get_random_proxy()})
+            response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
+            home_business = response.text
             if 'EAAG' in home_business:
                 token = home_business.split('EAAG')[1].split('","')[0]
                 cookie_token = f'{cookie}|EAAG{token}'
                 gome_token.append(cookie_token)
+                token_status[cookie_token] = "live"
             else:
+                token_status[cookie] = "die"
                 print(f"[!] Không thể lấy token từ cookie: {cookie[:50]}... Cookie có thể không hợp lệ.")
         except requests.exceptions.RequestException as e:
+            token_status[cookie] = "die"
             print(f"[!] Lỗi khi lấy token cho cookie: {cookie[:50]}... {e}")
+            # Stop immediately if token retrieval fails
+            bot.send_message(chat_id, f"Lỗi khi lấy token cho cookie: {cookie[:50]}... Dừng tool.")
+            stop_sharing_flags[chat_id] = True
+            return []  # Return an empty list to signal failure and stop
         except Exception as e:
-             print(f"[!] Lỗi không mong muốn khi lấy token cho cookie: {cookie[:50]}... {e}")
+            token_status[cookie] = "die"
+            print(f"[!] Lỗi không mong muốn khi lấy token cho cookie: {cookie[:50]}... {e}")
+            # Stop immediately if an unexpected error occurs
+            bot.send_message(chat_id, f"Lỗi không mong muốn khi lấy token cho cookie: {cookie[:50]}... Dừng tool.")
+            stop_sharing_flags[chat_id] = True
+            return []  # Return an empty list to signal failure and stop
     return gome_token
 
-def share(tach, id_share):
+def share(tach, id_share, chat_id):
     cookie = tach.split('|')[0]
     token = tach.split('|')[1]
     he = {
@@ -88,16 +118,27 @@ def share(tach, id_share):
         'referer': f'https://m.facebook.com/{id_share}'
     }
     try:
-        res = requests.post(f'https://graph.facebook.com/me/feed?link=https://m.facebook.com/{id_share}&published=0&access_token={token}', headers=he, timeout=10).json()
+        response = requests.post(f'https://graph.facebook.com/me/feed?link=https://m.facebook.com/{id_share}&published=0&access_token={token}', headers=he, timeout=10, proxies={'http': get_random_proxy(), 'https': get_random_proxy()})
+        response.raise_for_status()
+        res = response.json()
         if 'id' in res:
             return True
         else:
+            token_status[tach] = "die" # Mark token as dead
+            bot.send_message(chat_id, f"[!] Share thất bại: ID: {id_share} - Token Die - Dừng tool.") # Notify user
+            stop_sharing_flags[chat_id] = True # Stop the process
             print(f"[!] Share thất bại: ID: {id_share} - Phản hồi: {res}")
             return False
     except requests.exceptions.RequestException as e:
+        token_status[tach] = "die"
+        bot.send_message(chat_id, f"[!] Lỗi request share: ID: {id_share} - {e} - Dừng tool.")
+        stop_sharing_flags[chat_id] = True
         print(f"[!] Lỗi request share: ID: {id_share} - {e}")
         return False
     except Exception as e:
+        token_status[tach] = "die"
+        bot.send_message(chat_id, f"[!] Lỗi không mong muốn khi share: ID: {id_share} - {e} - Dừng tool.")
+        stop_sharing_flags[chat_id] = True
         print(f"[!] Lỗi không mong muốn khi share: ID: {id_share} - {e}")
         return False
 
@@ -105,7 +146,7 @@ def share(tach, id_share):
 def share_thread_telegram(tach, id_share, stt, chat_id, message_id):
     if stop_sharing_flags.get(chat_id, False):
         return False # Stop sharing
-    if share(tach, id_share):
+    if share(tach, id_share, chat_id):
         return True
     else:
         return False
@@ -151,6 +192,8 @@ def stop_share_callback(call):
     chat_id = call.message.chat.id
     stop_sharing_flags[chat_id] = True  # Set the stop flag
     bot.send_message(chat_id, "Đã nhận lệnh dừng share. Vui lòng chờ quá trình hoàn tất.")
+    global gome_token
+    gome_token.clear()
 
 def process_cookie_file(message):
     chat_id = message.chat.id
@@ -237,7 +280,13 @@ def start_sharing(chat_id):
     delay = data['delay']
     total_share_limit = data['total_share_limit']
 
-    all_tokens = get_token(input_file)
+    # Get tokens, stop if fails
+    all_tokens = get_token(input_file, chat_id)
+    if not all_tokens:
+        # get_token already sent a message to the user
+        del share_data[chat_id]
+        return
+
     total_live = len(all_tokens)
 
     if total_live == 0:
@@ -276,6 +325,9 @@ def start_sharing(chat_id):
                 continue_sharing = False
                 break
 
+            if token_status.get(tach, "live") == "die":  # Skip dead tokens
+                continue
+
             stt += 1
             thread = threading.Thread(target=process_share, args=(tach, id_share, stt, chat_id, message_id, user_id))
             thread.start()
@@ -283,6 +335,10 @@ def start_sharing(chat_id):
             shared_count += 1
 
             if total_share_limit > 0 and shared_count >= total_share_limit:
+                continue_sharing = False
+                break
+
+            if stop_sharing_flags.get(chat_id, False):
                 continue_sharing = False
                 break
 
@@ -296,6 +352,7 @@ def start_sharing(chat_id):
     bot.send_message(chat_id, f"Tổng cộng {successful_shares} share thành công.") # Final count
 
     del share_data[chat_id]
+    global gome_token
     gome_token.clear()
     stop_sharing_flags[chat_id] = False  # Reset
 
@@ -307,29 +364,31 @@ def process_share(tach, id_share, stt, chat_id, message_id, user_id):
         return  # Stop immediately
 
     success = share_thread_telegram(tach, id_share, stt, chat_id, message_id)
-    if success:
-        successful_shares += 1
+    if not success:
+        #share() function handles stopping when share fails
+        return
 
-        # Update daily share count
-        today = strftime("%Y-%m-%d")
-        if user_id not in user_share_counts:
-            user_share_counts[user_id] = {}
-        if today not in user_share_counts[user_id]:
-            user_share_counts[user_id][today] = 0
-        user_share_counts[user_id][today] += 1
+    # If share was successful:
+    successful_shares += 1
 
-        # Edit the message to show the updated count
-        try:
-            markup = types.InlineKeyboardMarkup()
-            stop_button = types.InlineKeyboardButton("Dừng Share", callback_data="stop_share")
-            markup.add(stop_button)
+    # Update daily share count
+    today = strftime("%Y-%m-%d")
+    if user_id not in user_share_counts:
+        user_share_counts[user_id] = {}
+    if today not in user_share_counts[user_id]:
+        user_share_counts[user_id][today] = 0
+    user_share_counts[user_id][today] += 1
 
-            bot.edit_message_text(chat_id=chat_id, message_id=message_id,
-                                  text=f"Bắt đầu share...\nĐang xử lý: {successful_shares} share thành công", reply_markup=markup) # Include stop button in edit
-        except Exception as e:
-            print(f"Error editing message: {e}")
-    else:
-        print(f"Share failed for ID: {id_share} - Token: {tach[:50]}...")
+    # Edit the message to show the updated count
+    try:
+        markup = types.InlineKeyboardMarkup()
+        stop_button = types.InlineKeyboardButton("Dừng Share", callback_data="stop_share")
+        markup.add(stop_button)
+
+        bot.edit_message_text(chat_id=chat_id, message_id=message_id,
+                              text=f"Bắt đầu share...\nĐang xử lý: {successful_shares} share thành công", reply_markup=markup) # Include stop button in edit
+    except Exception as e:
+        print(f"Error editing message: {e}")
 
 if __name__ == "__main__":
     try:
