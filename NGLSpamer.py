@@ -11,7 +11,7 @@ from telebot import types
 import uuid
 
 # Replace with your Telegram bot token
-BOT_TOKEN = "7766543633:AAFnN9tgGWFDyApzplak0tiJTafCxciFydo"
+BOT_TOKEN = "7766543633:AAFnN9tgGWFDyApzplak0tiJTafCxciFydo"  #REPLACE
 bot = telebot.TeleBot(BOT_TOKEN)
 
 # Replace with your Telegram admin user ID.  Use an integer.
@@ -43,6 +43,9 @@ gome_token = []
 # Proxy rotation (replace with your proxy list/source)
 proxies = [
     None # Direct connection. Leave this EVEN if using proxies!
+    # "http://user:pass@proxy1.example.com:8080",
+    # "http://user:pass@proxy2.example.com:8080",
+    # ... Add your proxies here
 ]
 
 # Session Management
