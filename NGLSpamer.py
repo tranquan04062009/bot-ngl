@@ -42,29 +42,81 @@ gome_token = []
 
 # Proxy rotation (replace with your proxy list/source)
 proxies = [
-    None # Direct connection
+    None # Direct connection. Leave this EVEN if using proxies!
 ]
 
-# Rate limiting settings
-REQUESTS_PER_MINUTE = 60  # Adjust as needed
-request_timestamps = []
+# Session Management
+token_sessions = {}  # Store requests.Session() objects for each token
+
+# Rate limiting settings (adaptive)
+BASE_REQUESTS_PER_MINUTE = 30  # Starting point.  Adjust!
+REQUESTS_PER_MINUTE_VARIATION = 10 # Add some randomness
+request_timestamps = {} # per token rate limiting
 
 def get_random_proxy():
     return random.choice(proxies)
 
-# Function to enforce rate limiting
-def rate_limit():
+def clear():
+    if(sys.platform.startswith('win')):
+        os.system('cls')
+    else:
+        os.system('clear')
+
+# Function to enforce rate limiting (adaptive per token)
+def rate_limit(token):
+    if token not in request_timestamps:
+        request_timestamps[token] = [] # init list for that token
+
     current_time = time.time()
-    while request_timestamps and request_timestamps[0] <= current_time - 60:
-        request_timestamps.pop(0)
-    if len(request_timestamps) >= REQUESTS_PER_MINUTE:
-        sleep_time = 60 - (current_time - request_timestamps[0])
-        time.sleep(sleep_time)
-    request_timestamps.append(current_time)
+    while request_timestamps[token] and request_timestamps[token][0] <= current_time - 60:
+        request_timestamps[token].pop(0)
+
+    # Adaptive Rate Limiting: Adjust based on success
+    if token_status.get(token, "live") == "live":
+        requests_per_minute = BASE_REQUESTS_PER_MINUTE + random.randint(-REQUESTS_PER_MINUTE_VARIATION, REQUESTS_PER_MINUTE_VARIATION)
+    else: # slow down failing tokens.
+        requests_per_minute = BASE_REQUESTS_PER_MINUTE // 2 + random.randint(-REQUESTS_PER_MINUTE_VARIATION // 2, REQUESTS_PER_MINUTE_VARIATION // 2)
+
+    if len(request_timestamps[token]) >= requests_per_minute:
+        sleep_time = 60 - (current_time - request_timestamps[token][0])
+        time.sleep(max(0, sleep_time))  # Ensure sleep time is not negative
+
+    request_timestamps[token].append(current_time)
 
 # Generate a random device ID (UUID4)
 def generate_device_id():
     return str(uuid.uuid4())
+
+# Robust Header Generation Function
+def generate_headers(cookie, device_id):
+    user_agent = random.choice(user_agents)
+    accept_language = random.choice([
+        "vi-VN,vi;q=0.9,fr-FR;q=0.8,fr;q=0.7,en-US;q=0.6,en;q=0.5",
+        "en-US,en;q=0.9",
+        "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7"
+    ])  # Vary language preferences
+
+    headers = {
+        'authority': 'business.facebook.com',
+        'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+        'accept-language': accept_language,
+        'cache-control': 'max-age=0',
+        'cookie': cookie,
+        'referer': 'https://www.facebook.com/',
+        'sec-ch-ua': '".Not/A)Brand";v="99", "Google Chrome";v="103", "Chromium";v="103"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"Linux"',
+        'sec-fetch-dest': 'document',
+        'sec-fetch-mode': 'navigate',
+        'sec-fetch-site': 'same-origin',
+        'sec-fetch-user': '?1',
+        'upgrade-insecure-requests': '1',
+        'user-agent': user_agent,
+        'x-fb-device-group': '4481',  # Add realistic Facebook headers
+        'x-fb-friendly-name': 'ViewerBookmarksListQuery',
+        'x-fb-http-engine': 'Liger'
+    }
+    return headers
 
 def get_token(input_file, chat_id):
     global gome_token
@@ -73,31 +125,18 @@ def get_token(input_file, chat_id):
         cookie = cookie.strip()
         if not cookie:
             continue
+
         device_id = generate_device_id()
-        user_agent = random.choice(user_agents) # Get user agent for each request
-
-        header_ = {
-            'authority': 'business.facebook.com',
-            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
-            'accept-language': 'vi-VN,vi;q=0.9,fr-FR;q=0.8,fr;q=0.7,en-US;q=0.6,en;q=0.5',
-            'cache-control': 'max-age=0',
-            'cookie': cookie,
-            'referer': 'https://www.facebook.com/',
-            'sec-ch-ua': '".Not/A)Brand";v="99", "Google Chrome";v="103", "Chromium";v="103"',
-            'sec-ch-ua-mobile': '?0',
-            'sec-ch-ua-platform': '"Linux"',
-            'sec-fetch-dest': 'document',
-            'sec-fetch-mode': 'navigate',
-            'sec-fetch-site': 'same-origin',
-            'sec-fetch-user': '?1',
-            'upgrade-insecure-requests': '1',
-            'user-agent': user_agent
-        }
+        headers = generate_headers(cookie, device_id)
+        cookie_token = f'{cookie}|None|{device_id}' # initial value.  None represents the absence of token at this time
         try:
-            rate_limit() # Enforce rate limiting
+            session = requests.Session() # Create a new session for each token
+            token_sessions[cookie_token] = session  # store session in a dictionary indexed by "cookie|device_id"
 
-            response = requests.get('https://business.facebook.com/content_management', headers=header_, timeout=15, proxies={'http': get_random_proxy(), 'https': get_random_proxy()})
+            rate_limit(cookie_token)  # Rate limit token retrieval.
+            response = session.get('https://business.facebook.com/content_management', headers=headers, timeout=15, proxies={'http': get_random_proxy(), 'https': get_random_proxy()}) # Use session
             response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
+
             home_business = response.text
             if 'EAAG' in home_business:
                 token = home_business.split('EAAG')[1].split('","')[0]
@@ -105,67 +144,75 @@ def get_token(input_file, chat_id):
                 gome_token.append(cookie_token)
                 token_status[cookie_token] = "live"
             else:
-                token_status[cookie] = "die"
+                token_status[cookie_token] = "die" # status die at token retrieval
                 print(f"[!] Không thể lấy token từ cookie: {cookie[:50]}... Cookie có thể không hợp lệ.")
+
         except requests.exceptions.RequestException as e:
-            token_status[cookie] = "die"
+            token_status[cookie_token] = "die"
             print(f"[!] Lỗi khi lấy token cho cookie: {cookie[:50]}... {e}")
-            # Stop immediately if token retrieval fails
             bot.send_message(chat_id, f"Lỗi khi lấy token cho cookie: {cookie[:50]}... Dừng tool.")
             stop_sharing_flags[chat_id] = True
-            return []  # Return an empty list to signal failure and stop
+            if cookie_token in token_sessions:
+                token_sessions[cookie_token].close()
+                del token_sessions[cookie_token]
+            return []  # Stop immediately
+
         except Exception as e:
-            token_status[cookie] = "die"
+            token_status[cookie_token] = "die"
             print(f"[!] Lỗi không mong muốn khi lấy token cho cookie: {cookie[:50]}... {e}")
-            # Stop immediately if an unexpected error occurs
             bot.send_message(chat_id, f"Lỗi không mong muốn khi lấy token cho cookie: {cookie[:50]}... Dừng tool.")
             stop_sharing_flags[chat_id] = True
-            return []  # Return an empty list to signal failure and stop
+            if cookie_token in token_sessions:
+                token_sessions[cookie_token].close()
+                del token_sessions[cookie_token]
+            return []  # Stop immediately
+
     return gome_token
 
 def share(tach, id_share, chat_id):
     cookie = tach.split('|')[0]
     token = tach.split('|')[1]
     device_id = tach.split('|')[2] # Get device ID from token
-    user_agent = random.choice(user_agents) # Get user agent for each request
+    headers = generate_headers(cookie, device_id) # consistent headers
 
-    he = {
-        'accept': '*/*',
-        'accept-encoding': 'gzip, deflate',
-        'connection': 'keep-alive',
-        'content-length': '0',
-        'cookie': cookie,
-        'host': 'graph.facebook.com',
-        'user-agent': user_agent,
-        'referer': f'https://m.facebook.com/{id_share}'
-    }
+    session = token_sessions.get(tach) # Get the session object.
+
+    if not session: # should never happen but just in case
+        print(f"No session found for token: {tach[:50]}.  Creating new session (this is unexpected)")
+        session = requests.Session()  # create ad hoc, but this should be fixed
+        token_sessions[tach] = session # save adhoc
+
     try:
-        rate_limit() # Enforce rate limiting
+        rate_limit(tach)  # Rate Limit per token
 
-        response = requests.post(f'https://graph.facebook.com/me/feed?link=https://m.facebook.com/{id_share}&published=0&access_token={token}&device_id={device_id}', headers=he, timeout=10, proxies={'http': get_random_proxy(), 'https': get_random_proxy()})
-        response.raise_for_status()
+        data = {'link': f'https://m.facebook.com/{id_share}', 'published': '0', 'access_token': token, 'device_id': device_id}
+        response = session.post(f'https://graph.facebook.com/me/feed', headers=headers, data=data, timeout=10, proxies={'http': get_random_proxy(), 'https': get_random_proxy()})
+        response.raise_for_status() # check for HTTP errors
         res = response.json()
+
         if 'id' in res:
+            token_status[tach] = "live" # Share was success. Keep it live.
             return True
         else:
-            token_status[tach] = "die" # Mark token as dead
-            bot.send_message(chat_id, f"[!] Share thất bại: ID: {id_share} - Token Die - Dừng tool.") # Notify user
-            stop_sharing_flags[chat_id] = True # Stop the process
+            token_status[tach] = "die" # Token is dead
+            bot.send_message(chat_id, f"[!] Share thất bại: ID: {id_share} - Token Die - Dừng tool.")
+            stop_sharing_flags[chat_id] = True
             print(f"[!] Share thất bại: ID: {id_share} - Phản hồi: {res}")
             return False
+
     except requests.exceptions.RequestException as e:
         token_status[tach] = "die"
         bot.send_message(chat_id, f"[!] Lỗi request share: ID: {id_share} - {e} - Dừng tool.")
         stop_sharing_flags[chat_id] = True
         print(f"[!] Lỗi request share: ID: {id_share} - {e}")
         return False
+
     except Exception as e:
         token_status[tach] = "die"
         bot.send_message(chat_id, f"[!] Lỗi không mong muốn khi share: ID: {id_share} - {e} - Dừng tool.")
         stop_sharing_flags[chat_id] = True
         print(f"[!] Lỗi không mong muốn khi share: ID: {id_share} - {e}")
         return False
-
 
 def share_thread_telegram(tach, id_share, stt, chat_id, message_id):
     if stop_sharing_flags.get(chat_id, False):
@@ -174,7 +221,6 @@ def share_thread_telegram(tach, id_share, stt, chat_id, message_id):
         return True
     else:
         return False
-
 
 # Telegram Bot Handlers
 share_data = {}  # Store user-specific data
@@ -219,6 +265,12 @@ def stop_share_callback(call):
     global gome_token
     gome_token.clear()
 
+    # close sessions (cleanup resources)
+    global token_sessions
+    for session in token_sessions.values():
+        session.close()
+    token_sessions = {} # reset
+
 def process_cookie_file(message):
     chat_id = message.chat.id
     user_id = message.from_user.id
@@ -238,7 +290,6 @@ def process_cookie_file(message):
         bot.reply_to(message, "Vui lòng gửi file chứa cookie (cookies.txt).")  # User-friendly message
         del share_data[chat_id]  # Clear data
 
-
 def process_id(message):
     chat_id = message.chat.id
     id_share = message.text.strip()
@@ -250,7 +301,6 @@ def process_id(message):
     share_data[chat_id]['id_share'] = id_share
     bot.send_message(chat_id, "Vui lòng nhập delay giữa các lần share (giây).")
     bot.register_next_step_handler(message, process_delay)
-
 
 def process_delay(message):
     chat_id = message.chat.id
@@ -309,6 +359,7 @@ def start_sharing(chat_id):
     if not all_tokens:
         # get_token already sent a message to the user
         del share_data[chat_id]
+
         return
 
     total_live = len(all_tokens)
@@ -380,6 +431,11 @@ def start_sharing(chat_id):
     gome_token.clear()
     stop_sharing_flags[chat_id] = False  # Reset
 
+    # Cleanup sessions
+    global token_sessions
+    for session in token_sessions.values():
+        session.close()
+    token_sessions = {}  # Reset
 
 def process_share(tach, id_share, stt, chat_id, message_id, user_id):
     global successful_shares
