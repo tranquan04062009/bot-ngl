@@ -123,7 +123,7 @@ def share_command(message):
     chat_id = message.chat.id
     share_data[chat_id] = {}  # Initialize data for the user
     # Display link and other information
-    bot.send_message(chat_id, "Thông tin bot:\n- Bot này được phát triển bởi [Your Name/Organization]\n- Hỗ trợ share bài viết lên trang cá nhân.\n- Liên hệ: [Your Contact Information/Link]")
+    bot.send_message(chat_id, "Thông tin bot:\n- Bot này được phát triển bởi [Trần Quân MBC/SECPHIPHAI]\n- Bot Buff Share Bài Viết .\n- Liên hệ: [0376841471/https://youtube.com/@secphiphai?si=Y0Z7YJ8UktgeaRmk]")
 
     # Create a stop button
     markup = types.InlineKeyboardMarkup()
