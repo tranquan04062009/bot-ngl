@@ -1,380 +1,279 @@
-import logging
+import sys
 import os
-import random
-import time
-from time import sleep
-
 import requests
-from telegram import __version__ as TG_VER
-
-try:
-    from telegram import __version_info__
-except ImportError:
-    __version_info__ = (0, 0, 0, 0, 0)  # type: ignore[assignment]
-
-if __version_info__ < (20, 0, 0, "alpha", 1):
-    raise RuntimeError(
-        f"This example is not compatible with your current PTB version {TG_VER}. "
-        f"Please install PTB version 20.0.0 or higher."
-    )
-from telegram import Update
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    CallbackContext,
-    MessageHandler,
-    filters,
-)
-
-# Enable logging
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
-)
-logger = logging.getLogger(__name__)
+import threading
+import time
+import json
+import random
+from time import strftime
+import telebot
+from telebot import types
 
 # Replace with your Telegram bot token
 BOT_TOKEN = "7766543633:AAFnN9tgGWFDyApzplak0tiJTafCxciFydo"
+bot = telebot.TeleBot(BOT_TOKEN)
 
-# Các biến toàn cục (cân nhắc sử dụng cơ sở dữ liệu để lưu trữ lâu dài trong một bot thực tế)
-list_clone = []
-list_img = []
-dem = 0
-stt = 0
-stt2 = 0
-running = False  # Thêm biến để kiểm soát trạng thái chạy của bot
+user_agents = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14.2; rv:122.0) Gecko/20100101 Firefox/122.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/120.0.2210.144",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; Trident/7.0; rv:11.0) like Gecko",
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Mobile/15E148 Safari/604.1",
+    "Mozilla/5.0 (iPad; CPU OS 17_2_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Mobile/15E148 Safari/604.1",
+    "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.259 Mobile Safari/537.36"
+]
 
+# Global stop flag for each chat
+stop_sharing_flags = {}
 
-# =========================== [ CLASS + FUNCTION TOOL ] ===========================
-class API_PRO5_ByNgDucPhat:
-    def __init__(self):
-        # Bạn có thể muốn tải cài đặt từ một tệp ở đây thay vì mã hóa cứng.
-        pass
-
-    def ndp_delay_tool(self, p):
-        """Mô phỏng độ trễ. Loại bỏ phần hiển thị cho Telegram."""
-        sleep(p)  # Độ trễ đơn giản nhất cho Telegram. Không cần hiệu ứng hình ảnh.
-
-    def getthongtinfacebook(self, cookie: str):
-        headers_get = {
-            "authority": "www.facebook.com",
-            "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
-            "accept-language": "vi-VN,vi;q=0.9,fr-FR;q=0.8,fr;q=0.7,en-US;q=0.6,en;q=0.5",
-            "sec-ch-prefers-color-scheme": "light",
-            "sec-ch-ua": '"Not?A_Brand";v="8", "Chromium";v="108", "Google Chrome";v="108"',
-            "sec-ch-ua-mobile": "?0",
-            "sec-ch-ua-platform": '"Windows"',
-            "sec-fetch-dest": "document",
-            "sec-fetch-mode": "navigate",
-            "sec-fetch-site": "none",
-            "sec-fetch-user": "?1",
-            "upgrade-insecure-requests": "1",
-            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36",
-            "viewport-width": "1184",
-            "cookie": cookie,
-        }
-        try:
-            url_profile = requests.get(
-                "https://www.facebook.com/me", headers=headers_get, timeout=10
-            ).url
-            get_dulieu_profile = requests.get(url=url_profile, headers=headers_get, timeout=10).text
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Lỗi trong quá trình yêu cầu: {e}")
-            return False
-        except Exception as e:
-            logger.exception(f"Đã xảy ra lỗi không mong muốn: {e}")
-            return False
-
-        try:
-            uid_get = cookie.split("c_user=")[1].split(";")[0]
-            fb_dtsg_get = (
-                get_dulieu_profile.split('{"name":"fb_dtsg","value":"')[1].split('"},')[0]
-            )
-            jazoest_get = (
-                get_dulieu_profile.split('{"name":"jazoest","value":"')[1].split('"},')[0]
-            )
-            name_get = get_dulieu_profile.split("<title>")[1].split("</title>")[0]
-            return name_get, uid_get, fb_dtsg_get, jazoest_get
-        except:
-            try:
-                uid_get = cookie.split("c_user=")[1].split(";")[0]
-                fb_dtsg_get = get_dulieu_profile.split(',"f":"')[1].split('","l":null}')[0]
-                jazoest_get = get_dulieu_profile.split("&jazoest=")[1].split('","e":"')[0]
-                name_get = get_dulieu_profile.split("<title>")[1].split("</title>")[0]
-                return name_get, uid_get, fb_dtsg_get, jazoest_get
-            except:
-                return False
-
-    def UpAvt(self, cookie, id_page, link_anh):
-        time.sleep(5)
-
-        try:
-            json_upavt = requests.get(
-                f"https://api-ndpcutevcl.000webhostapp.com/api/upavtpage.php?cookie={cookie}&id={id_page}&link_anh={link_anh}", timeout=10
-            ).json()
-            if json_upavt["status"] == "success":
-                return json_upavt
-            else:
-                return False
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Lỗi trong quá trình yêu cầu upAvt: {e}")  # Ghi lại lỗi
-            return False
-        except Exception as e:
-            logger.exception(f"Đã xảy ra lỗi không mong muốn trong upAvt: {e}")  # Ghi lại lỗi
-            return False
-
-    def RegPage(self, cookie, name, uid, fb_dtsg, jazoest):
-        try:
-            namepage = requests.get(
-                "https://story-shack-cdn-v2.glitch.me/generators/vietnamese-name-generator/male?count=2", timeout=10
-            ).json()["data"][0]["name"]
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Lỗi khi lấy tên: {e}")
-            return False, None, None
-        except Exception as e:
-             logger.exception(f"Đã xảy ra lỗi không mong muốn khi tạo tên: {e}")
-             return False, None, None
-        global dem
-        headers_reg = {
-            "authority": "www.facebook.com",
-            "accept": "*/*",
-            "accept-language": "vi-VN,vi;q=0.9,fr-FR;q=0.8,fr;q=0.7,en-US;q=0.6,en;q=0.5",
-            "origin": "https://www.facebook.com",
-            "referer": "https://www.facebook.com/pages/creation?ref_type=launch_point",
-            "sec-ch-prefers-color-scheme": "dark",
-            "sec-ch-ua": '"Google Chrome";v="107", "Chromium";v="107", "Not=A?Brand";v="24"',
-            "sec-ch-ua-mobile": "?0",
-            "sec-ch-ua-platform": '"Windows"',
-            "sec-fetch-dest": "empty",
-            "sec-fetch-mode": "cors",
-            "sec-fetch-site": "same-origin",
-            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36",
-            "viewport-width": "979",
-            "x-fb-friendly-name": "AdditionalProfilePlusCreationMutation",
-            "x-fb-lsd": "ZM7FAk6cuRcUp3imwqvHTY",
-            "cookie": cookie,
-        }
-        data_reg = {
-            "av": uid,
-            "__user": uid,
-            "__a": "1",
-            "__dyn": "7AzHxq1mxu1syUbFuC0BVU98nwgU29zEdEc8co5S3O2S7o11Ue8hw6vwb-q7oc81xoswIwuo886C11xmfz81sbzoaEnxO0Bo7O2l2Utwwwi831wiEjwZwlo5qfK6E7e58jwGzE8FU5e7oqBwJK2W5olwuEjUlDw-wUws9ovUaU3qxWm2Sq2-azo2NwkQ0z8c84K2e3u362-2B0oobo",
-            "__csr": "gP4ZAN2d-hbbRmLObkZO8LvRcXWVvth9d9GGXKSiLCqqr9qEzGTozAXiCgyBhbHrRG8VkQm8GFAfy94bJ7xeufz8jK8yGVVEgx-7oiwxypqCwgF88rzKV8y2O4ocUak4UpDxu3x1K4opAUrwGx63J0Lw-wa90eG18wkE7y14w4hw6Bw2-o069W00CSE0PW06aU02Z3wjU6i0btw3TE1wE5u",
-            "__req": "t",
-            "__hs": "19296.HYP:comet_pkg.2.1.0.2.1",
-            "dpr": "1",
-            "__ccg": "EXCELLENT",
-            "__rev": "1006496476",
-            "__s": "1gapab:y4xv3f:2hb4os",
-            "__hsi": "7160573037096492689",
-            "__comet_req": "15",
-            "fb_dtsg": fb_dtsg,
-            "jazoest": jazoest,
-            "lsd": "ZM7FAk6cuRcUp3imwqvHTY",
-            "__aaid": "800444344545377",
-            "__spin_r": "1006496476",
-            "__spin_b": "trunk",
-            "__spin_t": "1667200829",
-            "fb_api_caller_class": "RelayModern",
-            "fb_api_req_friendly_name": "AdditionalProfilePlusCreationMutation",
-            "variables": '{"input":{"bio":"reg auto by duykhanh","categories":["181475575221097"],"creation_source":"comet","name":"'
-            + namepage
-            + '","page_referrer":"launch_point","actor_id":"'
-            + uid
-            + '","client_mutation_id":"1"}}',
-            "server_timestamps": "true",
-            "doc_id": "5903223909690825",
-        }
-        try:
-            response = requests.post(
-                "https://www.facebook.com/api/graphql/", headers=headers_reg, data=data_reg, timeout=20
-            )
-            response.raise_for_status()  # Nâng cao HTTPError cho các phản hồi xấu (4xx hoặc 5xx)
-            idpage = response.json()["data"]["additional_profile_plus_create"]["additional_profile"]["id"]
-            dem += 1
-            return idpage, name, namepage  # Trả về tất cả dữ liệu liên quan
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Lỗi trong quá trình yêu cầu RegPage: {e}")
-            return False, None, None
-        except (KeyError, ValueError) as e:
-            logger.error(f"Lỗi phân tích cú pháp phản hồi RegPage: {e}")
-            return False, None, None
-        except Exception as e:
-             logger.exception(f"Đã xảy ra lỗi không mong muốn trong quá trình regpage: {e}")
-             return False, None, None
-
-
-# =========================== [ TELEGRAM BOT HANDLERS ] ===========================
-async def start(update: Update, context: CallbackContext) -> None:
-    """Gửi một tin nhắn chào mừng."""
-    await update.message.reply_text(
-        "Chào mừng đến với Bot Đăng Ký Trang Facebook!\n"
-        "Sử dụng /help để xem các lệnh khả dụng."
-    )
-
-
-async def help_command(update: Update, context: CallbackContext) -> None:
-    """Hiển thị các lệnh khả dụng."""
-    await update.message.reply_text(
-        "/start - Bắt đầu bot\n"
-        "/help - Hiển thị tin nhắn trợ giúp này\n"
-        "/add_cookie - Thêm cookie Facebook\n"
-        "/add_image - Thêm liên kết hình ảnh cho ảnh hồ sơ\n"
-        "/set_page_limit <limit> - Đặt số lượng trang cần tạo trước khi dừng\n"
-        "/set_delay <seconds> - Đặt độ trễ giữa các lần đăng ký trang\n"
-        "/start_registration - Bắt đầu quá trình đăng ký trang\n"
-        "/stop - Dừng quá trình đăng ký trang"
-    )
-
-
-async def add_cookie(update: Update, context: CallbackContext) -> None:
-    """Thêm cookie Facebook vào danh sách."""
-    global list_clone, stt
-    cookie = update.message.text.split(" ", 1)[1].strip()  # Lấy cookie, loại bỏ khoảng trắng thừa
-    if not cookie:
-        await update.message.reply_text("Vui lòng cung cấp một cookie sau lệnh /add_cookie.")
-        return
-
-    dpcutevcl = API_PRO5_ByNgDucPhat()
-    checklive = dpcutevcl.getthongtinfacebook(cookie)
-    if checklive:
-        stt += 1
-        list_clone.append(f"{cookie}|{checklive[0]}|{checklive[1]}|{checklive[2]}|{checklive[3]}")
-        await update.message.reply_text(f"Đã thêm cookie thành công! ({checklive[0]}) Tổng số cookie: {len(list_clone)}")
+def clear():
+    if(sys.platform.startswith('win')):
+        os.system('cls')
     else:
-        await update.message.reply_text("Cookie không hợp lệ hoặc đã hết hạn. Vui lòng kiểm tra và thử lại.")
+        os.system('clear')
 
-
-async def add_image(update: Update, context: CallbackContext) -> None:
-    """Thêm liên kết hình ảnh vào danh sách."""
-    global list_img, stt2
-    image_link = update.message.text.split(" ", 1)[1].strip()  # Lấy liên kết hình ảnh, loại bỏ khoảng trắng
-    if not image_link:
-        await update.message.reply_text("Vui lòng cung cấp một liên kết hình ảnh sau lệnh /add_image.")
-        return
-
-    list_img.append(image_link)
-    stt2 += 1
-    await update.message.reply_text(f"Đã thêm liên kết hình ảnh! Tổng số hình ảnh: {len(list_img)}")
-
-
-async def set_page_limit(update: Update, context: CallbackContext) -> None:
-    """Đặt giới hạn tạo trang."""
-    global slpage
-    try:
-        limit = int(context.args[0])
-        slpage = limit
-        await update.message.reply_text(f"Giới hạn tạo trang được đặt thành: {limit}")
-    except (IndexError, ValueError):
-        await update.message.reply_text("Cách sử dụng: /set_page_limit <số>")
-
-
-async def set_delay(update: Update, context: CallbackContext) -> None:
-    """Đặt độ trễ giữa các lần đăng ký trang."""
-    global delay
-    try:
-        delay = int(context.args[0])
-        await update.message.reply_text(f"Độ trễ được đặt thành: {delay} giây")
-    except (IndexError, ValueError):
-        await update.message.reply_text("Cách sử dụng: /set_delay <giây>")
-
-async def start_registration(update: Update, context: CallbackContext) -> None:
-    """Bắt đầu quá trình đăng ký trang."""
-    global list_clone, list_img, dem, slpage, delay, running
-    dpcutevcl = API_PRO5_ByNgDucPhat()
-
-    if running:
-        await update.message.reply_text("Quá trình đăng ký đã đang chạy. Vui lòng dừng trước khi bắt đầu lại.")
-        return
-
-    if not list_clone:
-        await update.message.reply_text("Chưa có cookie nào được thêm. Vui lòng thêm cookie bằng /add_cookie.")
-        return
-
-    if not list_img:
-        await update.message.reply_text("Chưa có liên kết hình ảnh nào được thêm. Vui lòng thêm liên kết hình ảnh bằng /add_image.")
-        return
-
-    if slpage == 0:  # Kiểm tra xem giới hạn đã được đặt chưa
-        await update.message.reply_text("Vui lòng đặt giới hạn tạo trang bằng /set_page_limit <giới hạn>")
-        return
-
-    if delay == 0:  # Kiểm tra xem độ trễ đã được đặt chưa
-        await update.message.reply_text("Vui lòng đặt độ trễ giữa các lần đăng ký trang bằng /set_delay <giây>")
-        return
-
-    running = True  # Đặt trạng thái đang chạy
-
-    await update.message.reply_text(
-        f"Bắt đầu đăng ký trang...\n"
-        f"Sử dụng {len(list_clone)} cookie và {len(list_img)} hình ảnh.\n"
-        f"Tạo tối đa {slpage} trang với độ trễ {delay} giây giữa mỗi trang."
-    )
-
-    try:
-        for dulieuclone in list_clone:
-            if not running:  # Kiểm tra trạng thái dừng
-                await update.message.reply_text("Đã dừng quá trình đăng ký.")
-                return
-
-            cookie, name, uid, fb_dtsg, jazoest = dulieuclone.split("|")
-            result = dpcutevcl.RegPage(cookie, name, uid, fb_dtsg, jazoest)
-
-            if result:
-                idpage, fb_name, page_name = result  # Mở gói tuple
-
-                link_anh = random.choice(list_img)
-                up_result = dpcutevcl.UpAvt(cookie, idpage, link_anh)
-
-                if up_result:
-                    await update.message.reply_text(
-                        f"Đã tạo trang: {page_name} (ID: {idpage})\n"
-                        f"Đã cập nhật ảnh hồ sơ thành công."
-                    )
-                else:
-                    await update.message.reply_text(
-                        f"Đã tạo trang: {page_name} (ID: {idpage})\n"
-                        f"Không thể cập nhật ảnh hồ sơ."
-                    )
+gome_token = []
+def get_token(input_file):
+    gome_token = []
+    for cookie in input_file:
+        cookie = cookie.strip()
+        if not cookie:
+            continue
+        header_ = {
+            'authority': 'business.facebook.com',
+            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+            'accept-language': 'vi-VN,vi;q=0.9,fr-FR;q=0.8,fr;q=0.7,en-US;q=0.6,en;q=0.5',
+            'cache-control': 'max-age=0',
+            'cookie': cookie,
+            'referer': 'https://www.facebook.com/',
+            'sec-ch-ua': '".Not/A)Brand";v="99", "Google Chrome";v="103", "Chromium";v="103"',
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-platform': '"Linux"',
+            'sec-fetch-dest': 'document',
+            'sec-fetch-mode': 'navigate',
+            'sec-fetch-site': 'same-origin',
+            'sec-fetch-user': '?1',
+            'upgrade-insecure-requests': '1',
+            'user-agent': random.choice(user_agents)
+        }
+        try:
+            home_business = requests.get('https://business.facebook.com/content_management', headers=header_, timeout=15).text
+            if 'EAAG' in home_business:
+                token = home_business.split('EAAG')[1].split('","')[0]
+                cookie_token = f'{cookie}|EAAG{token}'
+                gome_token.append(cookie_token)
             else:
-                await update.message.reply_text(f"Không thể đăng ký trang cho {name}. Cookie có thể bị chặn hoặc không hợp lệ.")
+                print(f"[!] Không thể lấy token từ cookie: {cookie[:50]}... Cookie có thể không hợp lệ.")
+        except requests.exceptions.RequestException as e:
+            print(f"[!] Lỗi khi lấy token cho cookie: {cookie[:50]}... {e}")
+        except Exception as e:
+             print(f"[!] Lỗi không mong muốn khi lấy token cho cookie: {cookie[:50]}... {e}")
+    return gome_token
 
-            dpcutevcl.ndp_delay_tool(delay)
-            dem += 1
+def share(tach, id_share):
+    cookie = tach.split('|')[0]
+    token = tach.split('|')[1]
+    he = {
+        'accept': '*/*',
+        'accept-encoding': 'gzip, deflate',
+        'connection': 'keep-alive',
+        'content-length': '0',
+        'cookie': cookie,
+        'host': 'graph.facebook.com',
+        'user-agent': random.choice(user_agents),
+        'referer': f'https://m.facebook.com/{id_share}'
+    }
+    try:
+        res = requests.post(f'https://graph.facebook.com/me/feed?link=https://m.facebook.com/{id_share}&published=0&access_token={token}', headers=he, timeout=10).json()
+        if 'id' in res:
+            return True
+        else:
+            print(f"[!] Share thất bại: ID: {id_share} - Phản hồi: {res}")
+            return False
+    except requests.exceptions.RequestException as e:
+        print(f"[!] Lỗi request share: ID: {id_share} - {e}")
+        return False
+    except Exception as e:
+        print(f"[!] Lỗi không mong muốn khi share: ID: {id_share} - {e}")
+        return False
 
-            if dem >= slpage:
-                await update.message.reply_text(f"Đã đạt đến giới hạn tạo trang ({slpage}). Dừng lại.")
-                break  # Dừng vòng lặp nếu đạt đến giới hạn
-    finally:
-        running = False  # Đảm bảo rằng trạng thái đang chạy được đặt thành False sau khi hoàn thành hoặc dừng lại
-        await update.message.reply_text("Quá trình đăng ký hoàn tất.")
+
+def share_thread_telegram(tach, id_share, stt, chat_id, message_id):
+    if stop_sharing_flags.get(chat_id, False):
+        return False # Stop sharing
+    if share(tach, id_share):
+        return True
+    else:
+        return False
 
 
-async def stop(update: Update, context: CallbackContext) -> None:
-    """Dừng quá trình đăng ký."""
-    global running
-    running = False
-    await update.message.reply_text("Đang dừng quá trình đăng ký...")
+# Telegram Bot Handlers
+share_data = {}  # Store user-specific data
+
+@bot.message_handler(commands=['start'])
+def start(message):
+    bot.reply_to(message, "Chào mừng! Sử dụng /share để bắt đầu.")
+
+@bot.message_handler(commands=['share'])
+def share_command(message):
+    chat_id = message.chat.id
+    share_data[chat_id] = {}  # Initialize data for the user
+    # Create a stop button
+    markup = types.InlineKeyboardMarkup()
+    stop_button = types.InlineKeyboardButton("Dừng Share", callback_data="stop_share")
+    markup.add(stop_button)
+    bot.send_message(chat_id, "Vui lòng gửi file chứa cookie (cookies.txt).", reply_markup=markup)
+    bot.register_next_step_handler(message, process_cookie_file)
+
+@bot.callback_query_handler(func=lambda call: call.data == "stop_share")
+def stop_share_callback(call):
+    chat_id = call.message.chat.id
+    stop_sharing_flags[chat_id] = True  # Set the stop flag
+    bot.send_message(chat_id, "Đã nhận lệnh dừng share. Vui lòng chờ quá trình hoàn tất.")
+
+def process_cookie_file(message):
+    chat_id = message.chat.id
+    try:
+        file_info = bot.get_file(message.document.file_id)
+        downloaded_file = bot.download_file(file_info.file_path)
+        file_content = downloaded_file.decode('utf-8').splitlines()
+        share_data[chat_id]['cookie_file'] = file_content
+        bot.send_message(chat_id, "Đã nhận file cookie. Vui lòng nhập ID bài viết cần share.")
+        bot.register_next_step_handler(message, process_id)
+    except Exception as e:
+        bot.reply_to(message, f"Lỗi khi xử lý file: {e}")
+        del share_data[chat_id]  # Clear data
+
+def process_id(message):
+    chat_id = message.chat.id
+    id_share = message.text.strip()
+    if not id_share.isdigit():
+        bot.reply_to(message, "ID không hợp lệ. Vui lòng nhập lại ID bài viết cần share.")
+        bot.register_next_step_handler(message, process_id)
+        return
+
+    share_data[chat_id]['id_share'] = id_share
+    bot.send_message(chat_id, "Vui lòng nhập delay giữa các lần share (giây).")
+    bot.register_next_step_handler(message, process_delay)
 
 
-# =========================== [ MAIN FUNCTION ] ===========================
-def main() -> None:
-    """Bắt đầu bot."""
-    # Tạo Application và chuyển token bot của bạn cho nó.
-    application = Application.builder().token(BOT_TOKEN).build()
+def process_delay(message):
+    chat_id = message.chat.id
+    delay_str = message.text.strip()
+    try:
+        delay = int(delay_str)
+        if delay < 0:
+              raise ValueError
+    except ValueError:
+        bot.reply_to(message, "Delay không hợp lệ. Vui lòng nhập lại delay (giây) là một số dương.")
+        bot.register_next_step_handler(message, process_delay)
+        return
 
-    # trên các lệnh khác nhau - trả lời trong Telegram
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("add_cookie", add_cookie))
-    application.add_handler(CommandHandler("add_image", add_image))
-    application.add_handler(CommandHandler("set_page_limit", set_page_limit))
-    application.add_handler(CommandHandler("set_delay", set_delay))
-    application.add_handler(CommandHandler("start_registration", start_registration))
-    application.add_handler(CommandHandler("stop", stop))
+    share_data[chat_id]['delay'] = delay
+    bot.send_message(chat_id, "Vui lòng nhập tổng số lượng share (0 để không giới hạn).")
+    bot.register_next_step_handler(message, process_total_shares)
 
-    # Chạy bot cho đến khi người dùng nhấn Ctrl-C
-    application.run_polling()
+def process_total_shares(message):
+    chat_id = message.chat.id
+    total_share_limit_str = message.text.strip()
+    try:
+        total_share_limit = int(total_share_limit_str)
+        if total_share_limit < 0:
+            raise ValueError
+    except ValueError:
+        bot.reply_to(message, "Số lượng share không hợp lệ. Vui lòng nhập lại tổng số lượng share (0 để không giới hạn) là một số dương.")
+        bot.register_next_step_handler(message, process_total_shares)
+        return
+
+    share_data[chat_id]['total_share_limit'] = total_share_limit
+    # Before starting, create the initial message and store its ID
+    markup = types.InlineKeyboardMarkup()
+    stop_button = types.InlineKeyboardButton("Dừng Share", callback_data="stop_share")
+    markup.add(stop_button)
+    initial_message = bot.send_message(chat_id, "Bắt đầu share...\nĐang xử lý: 0 share thành công", reply_markup=markup) # Display 'Stop' button here
+    share_data[chat_id]['message_id'] = initial_message.message_id # Save this message ID
+    start_sharing(chat_id, initial_message.message_id)
+
+def start_sharing(chat_id, message_id):
+    data = share_data.get(chat_id)
+    if not data:
+        bot.send_message(chat_id, "Dữ liệu không đầy đủ. Vui lòng bắt đầu lại bằng lệnh /share.")
+        return
+
+    input_file = data['cookie_file']
+    id_share = data['id_share']
+    delay = data['delay']
+    total_share_limit = data['total_share_limit']
+
+    all_tokens = get_token(input_file)
+    total_live = len(all_tokens)
+
+    if total_live == 0:
+        bot.send_message(chat_id, "Không tìm thấy token hợp lệ nào.")
+        del share_data[chat_id]
+        return
+
+    bot.send_message(chat_id, f"Tìm thấy {total_live} token hợp lệ.")
+
+    stt = 0
+    shared_count = 0
+    successful_shares = 0 # Track successful shares
+    continue_sharing = True
+    stop_sharing_flags[chat_id] = False  # Reset stop flag at start
+    while continue_sharing:
+        for tach in all_tokens:
+            if stop_sharing_flags.get(chat_id, False):
+                continue_sharing = False
+                break  # Exit inner loop
+            stt += 1
+            thread = threading.Thread(target=process_share, args=(tach, id_share, stt, chat_id, message_id))
+            thread.start()
+            time.sleep(delay)
+            shared_count += 1
+
+            if total_share_limit > 0 and shared_count >= total_share_limit:
+                continue_sharing = False
+                break
+
+    for thread in threading.enumerate():
+        if thread != threading.current_thread():
+            thread.join()
+
+    bot.send_message(chat_id, "Quá trình share hoàn tất.")
+    if total_share_limit > 0 and shared_count >= total_share_limit:
+        bot.send_message(chat_id, f"Đạt giới hạn share là {total_share_limit} shares.")
+    bot.send_message(chat_id, f"Tổng cộng {successful_shares} share thành công.") # Final count
+
+    del share_data[chat_id]
+    gome_token.clear()
+    stop_sharing_flags[chat_id] = False  # Reset
+
+def process_share(tach, id_share, stt, chat_id, message_id):
+    global successful_shares # Access global variable
+    if stop_sharing_flags.get(chat_id, False):
+        return  # Stop immediately
+
+    success = share_thread_telegram(tach, id_share, stt, chat_id, message_id)
+    if success:
+        successful_shares += 1
+        # Edit the message to show the updated count
+        try:
+            markup = types.InlineKeyboardMarkup()
+            stop_button = types.InlineKeyboardButton("Dừng Share", callback_data="stop_share")
+            markup.add(stop_button)
+            bot.edit_message_text(chat_id=chat_id, message_id=message_id,
+                                  text=f"Bắt đầu share...\nĐang xử lý: {successful_shares} share thành công", reply_markup=markup) # Include stop button in edit
+        except Exception as e:
+            print(f"Error editing message: {e}")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        print("Bot is running...")
+        bot.infinity_polling()
+    except KeyboardInterrupt:
+        print("Bot stopped.")
+        sys.exit()
