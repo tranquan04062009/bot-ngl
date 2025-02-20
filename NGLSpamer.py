@@ -101,7 +101,7 @@ def share(tach, id_share):
         return False
 
 
-def share_thread_telegram(tach, id_share, stt, chat_id, message_id):
+def share_thread_telegram(tach, id_share, stt, chat_id):
     if stop_sharing_flags.get(chat_id, False):
         return False # Stop sharing
     if share(tach, id_share):
@@ -121,11 +121,7 @@ def start(message):
 def share_command(message):
     chat_id = message.chat.id
     share_data[chat_id] = {}  # Initialize data for the user
-    # Create a stop button
-    markup = types.InlineKeyboardMarkup()
-    stop_button = types.InlineKeyboardButton("Dừng Share", callback_data="stop_share")
-    markup.add(stop_button)
-    bot.send_message(chat_id, "Vui lòng gửi file chứa cookie (cookies.txt).", reply_markup=markup)
+    bot.send_message(chat_id, "Vui lòng gửi file chứa cookie (cookies.txt).")
     bot.register_next_step_handler(message, process_cookie_file)
 
 @bot.callback_query_handler(func=lambda call: call.data == "stop_share")
@@ -189,15 +185,16 @@ def process_total_shares(message):
         return
 
     share_data[chat_id]['total_share_limit'] = total_share_limit
-    # Before starting, create the initial message and store its ID
+    # Create the initial message with stop button
     markup = types.InlineKeyboardMarkup()
     stop_button = types.InlineKeyboardButton("Dừng Share", callback_data="stop_share")
     markup.add(stop_button)
-    initial_message = bot.send_message(chat_id, "Bắt đầu share...\nĐang xử lý: 0 share thành công", reply_markup=markup) # Display 'Stop' button here
-    share_data[chat_id]['message_id'] = initial_message.message_id # Save this message ID
-    start_sharing(chat_id, initial_message.message_id)
+    initial_message = bot.send_message(chat_id, "Bắt đầu share...\nĐang xử lý: 0 share thành công", reply_markup=markup)
+    share_data[chat_id]['message_id'] = initial_message.message_id
+    share_data[chat_id]['successful_shares'] = 0  # Initialize successful_shares
+    start_sharing(chat_id)
 
-def start_sharing(chat_id, message_id):
+def start_sharing(chat_id):
     data = share_data.get(chat_id)
     if not data:
         bot.send_message(chat_id, "Dữ liệu không đầy đủ. Vui lòng bắt đầu lại bằng lệnh /share.")
@@ -207,6 +204,8 @@ def start_sharing(chat_id, message_id):
     id_share = data['id_share']
     delay = data['delay']
     total_share_limit = data['total_share_limit']
+    message_id = data['message_id']
+    #successful_shares = data['successful_shares']
 
     all_tokens = get_token(input_file)
     total_live = len(all_tokens)
@@ -220,17 +219,31 @@ def start_sharing(chat_id, message_id):
 
     stt = 0
     shared_count = 0
-    successful_shares = 0 # Track successful shares
     continue_sharing = True
     stop_sharing_flags[chat_id] = False  # Reset stop flag at start
+
     while continue_sharing:
         for tach in all_tokens:
             if stop_sharing_flags.get(chat_id, False):
                 continue_sharing = False
                 break  # Exit inner loop
+
             stt += 1
-            thread = threading.Thread(target=process_share, args=(tach, id_share, stt, chat_id, message_id))
-            thread.start()
+            success = share_thread_telegram(tach, id_share, stt, chat_id)
+
+            if success:
+                data['successful_shares'] += 1
+                successful_shares = data['successful_shares']  # update local variable
+                # Edit the message to show the updated count
+                try:
+                    markup = types.InlineKeyboardMarkup()
+                    stop_button = types.InlineKeyboardButton("Dừng Share", callback_data="stop_share")
+                    markup.add(stop_button)
+                    bot.edit_message_text(chat_id=chat_id, message_id=message_id,
+                                          text=f"Bắt đầu share...\nĐang xử lý: {successful_shares} share thành công", reply_markup=markup, reply_markup=markup) # Include stop button in edit
+                except Exception as e:
+                    print(f"Error editing message: {e}")
+
             time.sleep(delay)
             shared_count += 1
 
@@ -238,10 +251,8 @@ def start_sharing(chat_id, message_id):
                 continue_sharing = False
                 break
 
-    for thread in threading.enumerate():
-        if thread != threading.current_thread():
-            thread.join()
-
+    # End of loop - Final message
+    successful_shares = data['successful_shares']  # Get final count
     bot.send_message(chat_id, "Quá trình share hoàn tất.")
     if total_share_limit > 0 and shared_count >= total_share_limit:
         bot.send_message(chat_id, f"Đạt giới hạn share là {total_share_limit} shares.")
@@ -251,23 +262,6 @@ def start_sharing(chat_id, message_id):
     gome_token.clear()
     stop_sharing_flags[chat_id] = False  # Reset
 
-def process_share(tach, id_share, stt, chat_id, message_id):
-    global successful_shares # Access global variable
-    if stop_sharing_flags.get(chat_id, False):
-        return  # Stop immediately
-
-    success = share_thread_telegram(tach, id_share, stt, chat_id, message_id)
-    if success:
-        successful_shares += 1
-        # Edit the message to show the updated count
-        try:
-            markup = types.InlineKeyboardMarkup()
-            stop_button = types.InlineKeyboardButton("Dừng Share", callback_data="stop_share")
-            markup.add(stop_button)
-            bot.edit_message_text(chat_id=chat_id, message_id=message_id,
-                                  text=f"Bắt đầu share...\nĐang xử lý: {successful_shares} share thành công", reply_markup=markup) # Include stop button in edit
-        except Exception as e:
-            print(f"Error editing message: {e}")
 
 
 if __name__ == "__main__":
