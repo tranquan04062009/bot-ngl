@@ -240,7 +240,7 @@ def start_sharing(chat_id):
                     stop_button = types.InlineKeyboardButton("Dừng Share", callback_data="stop_share")
                     markup.add(stop_button)
                     bot.edit_message_text(chat_id=chat_id, message_id=message_id,
-                                          text=f"Bắt đầu share...\nĐang xử lý: {successful_shares} share thành công", reply_markup=markup, reply_markup=markup) # Include stop button in edit
+                                          text=f"Bắt đầu share...\nĐang xử lý: {successful_shares} share thành công", reply_markup=markup
                 except Exception as e:
                     print(f"Error editing message: {e}")
 
