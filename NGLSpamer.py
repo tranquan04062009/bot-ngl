@@ -48,7 +48,7 @@ def cleanup_threads():
 # --- Helper Functions ---
 
 async def get_token(cookie: str) -> Optional[str]:
-    """Asynchronously gets the Facebook access token from a cookie."""
+    """Asynchronously gets the Facebook access token from a cookie, handling different response formats."""
     headers = {
         "authority": "business.facebook.com",
         "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
@@ -74,17 +74,27 @@ async def get_token(cookie: str) -> Optional[str]:
                 timeout=15,
             ) as response:
                 response_text = await response.text()
-                if "EAAG" in response_text:
-                    token = response_text.split("EAAG")[1].split('","')[0]
-                    return f"EAAG{token}"
-                else:
-                    logger.warning(f"Could not get token from cookie: {cookie[:50]}...")
-                    return None
+
+                # More robust token extraction using regular expressions:
+                match = re.search(r'"accessToken":"(EAAG[^"]+)"', response_text)
+                if match:
+                    return match.group(1)
+
+                match = re.search(r'EAAG[a-zA-Z0-9]+', response_text)
+                if match:
+                    return match.group(0)
+
+                # Look for tokens of the format EAAB....
+                match = re.search(r'"token":"(EAAB[^"]+)"', response_text)
+                if match:
+                    return match.group(1)
+                
+                logger.warning(f"Could not get token from cookie: {cookie[:50]}...")
+                return None
+
     except (aiohttp.ClientError, asyncio.TimeoutError, Exception) as e:
         logger.error(f"Error getting token for cookie: {cookie[:50]}... Error: {e}")
         return None
-
-
 
 async def share_post(cookie_token: str, id_share: str) -> bool:
     """Asynchronously shares a post to Facebook."""
