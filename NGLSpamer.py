@@ -17,7 +17,7 @@ bot = telebot.TeleBot(BOT_TOKEN)
 # Replace with your Telegram admin user ID.  Use an integer.
 ADMIN_USER_ID = 6940071938  # Example: Replace with your actual admin ID
 
-USER_SHARE_LIMIT_PER_DAY = 5000
+USER_SHARE_LIMIT_PER_DAY = 10000
 user_share_counts = {} # Keep track of shares per user per day
 
 # Improved User Agent Rotation (including mobile devices)
@@ -265,7 +265,9 @@ def reset_command(message):
 def share_command(message):
     chat_id = message.chat.id
     user_id = message.from_user.id
-    share_data[chat_id] = {}  # Initialize data for the user
+
+    # Reset share_data for the chat to ensure fresh start every time
+    share_data[chat_id] = {}
 
     # Check user's daily share count
     today = strftime("%Y-%m-%d")
@@ -278,11 +280,10 @@ def share_command(message):
         bot.send_message(chat_id, f"Bạn đã đạt giới hạn {USER_SHARE_LIMIT_PER_DAY} share hôm nay. Vui lòng thử lại vào ngày mai.")
         return
 
-
     # Display link and other information
     bot.send_message(chat_id, "Thông tin bot:\n- Bot này được phát triển bởi [Trần Quân / SECPHIPHAI]\n- Bot Buff Share Bài Viết .\n- Liên hệ: [0376841471]\n- [https://youtube.com/@secphiphai?si=Y0Z7YJ8UktgeaRmk]")
 
-    # Create a stop button
+    # Ensure bot always prompts for cookie file
     markup = types.InlineKeyboardMarkup()
     stop_button = types.InlineKeyboardButton("Dừng Share", callback_data="stop_share")
     markup.add(stop_button)
