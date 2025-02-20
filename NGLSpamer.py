@@ -21,11 +21,12 @@ import threading
 GET_FILE, GET_ID, GET_DELAY, GET_LIMIT = range(4)
 TOKEN = "7766543633:AAHZv7YVvjnTExyvRFy6xufeyc2AGYJTVlA"  # Replace with your bot token!
 
-# --- Logging Setup ---
+# --- Logging Setup (Improved) ---
 logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.DEBUG  # Set to DEBUG for more info
 )
 logger = logging.getLogger(__name__)
+
 
 # --- User Agents ---
 user_agents = [
@@ -40,15 +41,19 @@ user_agents = [
     "Mozilla/5.0 (iPad; CPU OS 17_2_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Mobile/15E148 Safari/604.1",
     "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.259 Mobile Safari/537.36"
 ]
-running_threads = []  # Keep track of active sharing threads globally
+# Use a dictionary to track threads by user ID
+running_threads: Dict[int, threading.Thread] = {}
 
 def cleanup_threads():
+    """Clean up finished threads, thread-safe."""
     global running_threads
-    running_threads = [t for t in running_threads if t.is_alive()]
+    with threading.Lock():  # Use a lock for thread safety when modifying the dictionary
+      running_threads = {user_id: thread for user_id, thread in running_threads.items() if thread.is_alive()}
+
 # --- Helper Functions ---
 
 async def get_token(cookie: str) -> Optional[str]:
-    """Asynchronously gets the Facebook access token from a cookie, handling different response formats."""
+    """Asynchronously gets the Facebook access token, handling more variations."""
     headers = {
         "authority": "business.facebook.com",
         "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
@@ -74,27 +79,29 @@ async def get_token(cookie: str) -> Optional[str]:
                 timeout=15,
             ) as response:
                 response_text = await response.text()
+                logger.debug(f"Response text for cookie {cookie[:50]}...: {response_text[:500]}")  # Log part of the response
 
-                # More robust token extraction using regular expressions:
-                match = re.search(r'"accessToken":"(EAAG[^"]+)"', response_text)
-                if match:
-                    return match.group(1)
+                # More robust token extraction:
+                patterns = [
+                    r'"accessToken":"(EAAG[^"]+)"',
+                    r'EAAG[a-zA-Z0-9]+',
+                    r'"token":"(EAAB[^"]+)"',
+                    r'EAAA[a-zA-Z0-9]+',  # Added another common pattern.
+                ]
+                for pattern in patterns:
+                    match = re.search(pattern, response_text)
+                    if match:
+                        token = match.group(0) if pattern.startswith('EAAA') or pattern.startswith("EAAG") else match.group(1)
+                        logger.info(f"Found token: {token} for cookie: {cookie[:50]}...")  #Log when find token
+                        return token
 
-                match = re.search(r'EAAG[a-zA-Z0-9]+', response_text)
-                if match:
-                    return match.group(0)
-
-                # Look for tokens of the format EAAB....
-                match = re.search(r'"token":"(EAAB[^"]+)"', response_text)
-                if match:
-                    return match.group(1)
-                
                 logger.warning(f"Could not get token from cookie: {cookie[:50]}...")
                 return None
 
     except (aiohttp.ClientError, asyncio.TimeoutError, Exception) as e:
         logger.error(f"Error getting token for cookie: {cookie[:50]}... Error: {e}")
         return None
+
 
 async def share_post(cookie_token: str, id_share: str) -> bool:
     """Asynchronously shares a post to Facebook."""
@@ -117,6 +124,7 @@ async def share_post(cookie_token: str, id_share: str) -> bool:
                 timeout=10,
             ) as response:
                 response_json = await response.json()
+                logger.debug(f"Share response for ID {id_share}: {response_json}")  # Log share response
                 if "id" in response_json:
                     return True
                 else:
@@ -128,6 +136,7 @@ async def share_post(cookie_token: str, id_share: str) -> bool:
         logger.error(f"Error sharing post: ID: {id_share} - Error: {e}")
         return False
 
+
 async def run_sharing_process(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Runs the sharing process with loaded cookies."""
     user_data = context.user_data
@@ -135,9 +144,11 @@ async def run_sharing_process(update: Update, context: ContextTypes.DEFAULT_TYPE
     shared_count = 0
     user_id = update.effective_user.id
 
-    if not user_data.get('all_tokens'):  # Check if tokens are available.
+
+    if not user_data.get('all_tokens'):
         await update.message.reply_text("No valid tokens found. Please start over with /share.")
-        return ConversationHandler.END
+        return
+
     async def share_single(cookie_token, id_share, update, user_id):
       """Helper function for sharing a single post."""
       if context.user_data.get('stop_requested', {}).get(user_id, False):
@@ -146,7 +157,7 @@ async def run_sharing_process(update: Update, context: ContextTypes.DEFAULT_TYPE
       success = await share_post(cookie_token, id_share)
       if success:
           await update.message.reply_text(
-              f'[{cookie_token.split("|")[0][-8:]}] SHARE THÀNH CÔNG ID {id_share}',  # Display last 8 chars of cookie
+              f'[{cookie_token.split("|")[0][-8:]}] SHARE THÀNH CÔNG ID {id_share}',
               quote=False
           )
       return success
@@ -161,22 +172,23 @@ async def run_sharing_process(update: Update, context: ContextTypes.DEFAULT_TYPE
             if context.user_data.get('stop_requested', {}).get(user_id, False):
               continue_sharing = False
               break
-          # Await share_single, not creating a separate task
 
             share_success = await share_single(cookie_token, user_data['id_share'], update,user_id)
             if share_success:
               shared_count +=1
+
             if total_share_limit > 0 and shared_count >= total_share_limit:
               continue_sharing = False  # Or = user_data['stop_requested']
               break
 
-            if share_success:  # Only wait if the share was successful.
+            if share_success:
               await asyncio.sleep(user_data['delay'] + random.uniform(-1, 1))
 
     await update.message.reply_text(
         "Quá trình share hoàn tất." +
         (" Đạt giới hạn!" if total_share_limit > 0 and shared_count >= total_share_limit else ""),
          parse_mode=constants.ParseMode.HTML)
+
 
 
 
@@ -192,11 +204,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def share(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Starts the conversation to get sharing details."""
-    # Reset stop request state
+    # Initialize stop_requested for the user if it doesn't exist
     if 'stop_requested' not in context.user_data:
         context.user_data['stop_requested'] = {}
-    user_id = update.effective_user.id  # Initialize stop_requested for the user.
-    context.user_data['stop_requested'][user_id] = False
+    user_id = update.effective_user.id
+    context.user_data['stop_requested'][user_id] = False  # Ensure it's set to False
 
     await update.message.reply_text(
         "Vui lòng gửi file cookies (mỗi cookie trên một dòng).",
@@ -208,25 +220,28 @@ async def share(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 async def get_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Receives the cookies file and extracts tokens."""
     user_data = context.user_data
-    user_id = update.effective_user.id
+    user_id = update.effective_user.id  # Get user_id for thread management
     try:
         file = await update.message.document.get_file()
         file_content = await file.download_as_bytearray()
         cookies_list = file_content.decode().splitlines()
-        user_data["cookies"] = cookies_list
+        logger.debug(f"Received cookies: {cookies_list}")  # Log received cookies
 
-
+        # Use asyncio.gather to run get_token concurrently
         all_tokens_coros = [get_token(cookie.strip()) for cookie in cookies_list if cookie.strip()]
-        all_tokens = await asyncio.gather(*all_tokens_coros) #gather all tokens
+        all_tokens = await asyncio.gather(*all_tokens_coros)
+
+        # Combine cookies with their corresponding tokens (only if a token was found)
         user_data['all_tokens'] = [f"{c.strip()}|{t}" for c, t in zip(cookies_list, all_tokens) if t is not None]
 
+
         if not user_data['all_tokens']:
-          await update.message.reply_text("Không tìm thấy token hợp lệ.  Hãy thử lại với file cookie khác hoặc kiểm tra cookie.")
-          return GET_FILE  # Stay in the same state
+            await update.message.reply_text("Không tìm thấy token hợp lệ. Hãy thử lại với file cookie khác hoặc kiểm tra cookie.")
+            return GET_FILE # Stay in the same state
 
         await update.message.reply_text(f"Đã nhận {len(user_data['all_tokens'])} token hợp lệ.")
         await update.message.reply_text("Vui lòng nhập ID bài viết cần share.")
-        return GET_ID
+        return GET_ID # Proceed to the next stage
     except Exception as e:
         logger.error(f"Error processing file: {e}")
         await update.message.reply_text("Có lỗi xảy ra khi xử lý file. Vui lòng gửi lại file.")
@@ -240,8 +255,8 @@ async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_data = context.user_data
     id_share = update.message.text.strip()
     if not re.match(r"^\d+$", id_share):  # Basic validation for numeric ID.
-      await update.message.reply_text("ID bài viết không hợp lệ. Vui lòng nhập lại.")
-      return GET_ID
+        await update.message.reply_text("ID bài viết không hợp lệ. Vui lòng nhập lại.")
+        return GET_ID
     user_data["id_share"] = id_share
     await update.message.reply_text("Vui lòng nhập thời gian delay giữa các lần share (giây).")
     return GET_DELAY
@@ -254,7 +269,7 @@ async def get_delay(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
         delay = int(update.message.text.strip())
         if delay < 0:
-          raise ValueError
+            raise ValueError
         user_data["delay"] = delay
         await update.message.reply_text(
             "Vui lòng nhập tổng số share (nhập 0 nếu không giới hạn)."
@@ -270,36 +285,41 @@ async def get_delay(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 async def get_limit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Receives the share limit and starts sharing."""
     user_data = context.user_data
-
+    user_id = update.effective_user.id
     try:
         limit = int(update.message.text.strip())
         if limit < 0:
-          raise ValueError
+            raise ValueError
         user_data["limit"] = limit
-         # Run the sharing process in a separate thread
+
     except ValueError:
         await update.message.reply_text("Số lượng share không hợp lệ. Vui lòng nhập lại.")
         return GET_LIMIT
     cleanup_threads()
+
+    # Store the thread in the dictionary, associated with the user ID
     thread = threading.Thread(target=lambda: asyncio.run(run_sharing_process(update, context)))
-
-    user_id = update.effective_user.id  # Get user ID
+    with threading.Lock():
+        running_threads[user_id] = thread
     thread.start()
-
+    logger.info(f"Sharing process started for user {user_id}")
     return ConversationHandler.END
+
+
 
 async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Stops the sharing process."""
-
     user_id = update.effective_user.id
-    # Set the stop request flag in user_data, this part is thread-safe
+
+    # Set the stop request flag (thread-safe)
     if 'stop_requested' not in context.user_data:
         context.user_data['stop_requested'] = {}
+    context.user_data['stop_requested'][user_id] = True  # Use user_id
 
-    context.user_data['stop_requested'][user_id] = True
     await update.message.reply_text("Đang dừng quá trình share...")
+    logger.info(f"Stop request received for user {user_id}")
 
-
+    cleanup_threads() # Ensure cleanup
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -309,12 +329,11 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 
 
-
 # --- Main Function ---
+
 def main() -> None:
     """Starts the bot."""
-
-    application = ApplicationBuilder().token(TOKEN).build()  # Use ApplicationBuilder
+    application = ApplicationBuilder().token(TOKEN).build()
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("share", share)],
