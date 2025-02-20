@@ -256,7 +256,7 @@ async def stop(update: Update, context: CallbackContext):
 def main():
     """Starts the bot."""
 
-    TOKEN = os.environ.get("7766543633:AAHZv7YVvjnTExyvRFy6xufeyc2AGYJTVlA") # Replace with your bot token
+    TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN") # Replace with your bot token
     if not TOKEN:
         print("Please set the TELEGRAM_BOT_TOKEN environment variable.")
         return
