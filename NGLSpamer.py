@@ -13,6 +13,12 @@ from telebot import types
 BOT_TOKEN = "7766543633:AAFnN9tgGWFDyApzplak0tiJTafCxciFydo"
 bot = telebot.TeleBot(BOT_TOKEN)
 
+# Replace with your Telegram admin user ID.  Use an integer.
+ADMIN_USER_ID = 6940071938  # Example: Replace with your actual admin ID
+
+USER_SHARE_LIMIT_PER_DAY = 5000
+user_share_counts = {} # Keep track of shares per user per day
+
 user_agents = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0",
@@ -29,12 +35,6 @@ user_agents = [
 # Global stop flag for each chat
 stop_sharing_flags = {}
 successful_shares = 0  # Global variable to track successful shares
-
-def clear():
-    if(sys.platform.startswith('win')):
-        os.system('cls')
-    else:
-        os.system('clear')
 
 gome_token = []
 def get_token(input_file):
@@ -121,10 +121,24 @@ def start(message):
 @bot.message_handler(commands=['share'])
 def share_command(message):
     chat_id = message.chat.id
+    user_id = message.from_user.id
     share_data[chat_id] = {}  # Initialize data for the user
+
+    # Check user's daily share count
+    today = strftime("%Y-%m-%d")
+    if user_id not in user_share_counts:
+        user_share_counts[user_id] = {}
+    if today not in user_share_counts[user_id]:
+        user_share_counts[user_id][today] = 0
+
+    if user_id != ADMIN_USER_ID and user_share_counts[user_id][today] >= USER_SHARE_LIMIT_PER_DAY:
+        bot.send_message(chat_id, f"Bạn đã đạt giới hạn {USER_SHARE_LIMIT_PER_DAY} share hôm nay. Vui lòng thử lại vào ngày mai.")
+        return
+
+
     # Display link and other information
     bot.send_message(chat_id, "Thông tin bot:\n- Bot này được phát triển bởi [Trần Quân / SECPHIPHAI]\n- Bot Buff Share Bài Viết .\n- Liên hệ: [0376841471]\n- [https://youtube.com/@secphiphai?si=Y0Z7YJ8UktgeaRmk]")
-
+    
     # Create a stop button
     markup = types.InlineKeyboardMarkup()
     stop_button = types.InlineKeyboardButton("Dừng Share", callback_data="stop_share")
@@ -140,7 +154,12 @@ def stop_share_callback(call):
 
 def process_cookie_file(message):
     chat_id = message.chat.id
+    user_id = message.from_user.id
     try:
+        if message.document is None:
+            bot.reply_to(message, "Vui lòng gửi file chứa cookie (cookies.txt).")
+            return
+
         file_info = bot.get_file(message.document.file_id)
         downloaded_file = bot.download_file(file_info.file_path)
         file_content = downloaded_file.decode('utf-8').splitlines()
@@ -148,8 +167,10 @@ def process_cookie_file(message):
         bot.send_message(chat_id, "Đã nhận file cookie. Vui lòng nhập ID bài viết cần share.")
         bot.register_next_step_handler(message, process_id)
     except Exception as e:
-        bot.reply_to(message, f"Lỗi khi xử lý file: {e}")
+        print(f"Error processing file: {e}") # Log error for debugging
+        bot.reply_to(message, "Vui lòng gửi file chứa cookie (cookies.txt).")  # User-friendly message
         del share_data[chat_id]  # Clear data
+
 
 def process_id(message):
     chat_id = message.chat.id
@@ -182,6 +203,7 @@ def process_delay(message):
 
 def process_total_shares(message):
     chat_id = message.chat.id
+    user_id = message.from_user.id
     total_share_limit_str = message.text.strip()
     try:
         total_share_limit = int(total_share_limit_str)
@@ -193,12 +215,19 @@ def process_total_shares(message):
         return
 
     share_data[chat_id]['total_share_limit'] = total_share_limit
-    # Before starting, create the initial message and store its ID
+
+    # Limit total shares based on user role
+    if user_id != ADMIN_USER_ID and total_share_limit > USER_SHARE_LIMIT_PER_DAY:
+        total_share_limit = USER_SHARE_LIMIT_PER_DAY
+        bot.send_message(chat_id, f"Bạn không phải là admin. Số lượng share sẽ bị giới hạn ở mức {USER_SHARE_LIMIT_PER_DAY}.")
+        share_data[chat_id]['total_share_limit'] = total_share_limit
 
     start_sharing(chat_id)
 
 def start_sharing(chat_id):
     data = share_data.get(chat_id)
+    user_id = bot.get_chat(chat_id).id # Get user ID safely
+
     if not data:
         bot.send_message(chat_id, "Dữ liệu không đầy đủ. Vui lòng bắt đầu lại bằng lệnh /share.")
         return
@@ -239,8 +268,16 @@ def start_sharing(chat_id):
             if stop_sharing_flags.get(chat_id, False):
                 continue_sharing = False
                 break  # Exit inner loop
+
+            # Daily Limit Check inside the loop
+            today = strftime("%Y-%m-%d")
+            if user_id != ADMIN_USER_ID and user_share_counts[user_id][today] >= USER_SHARE_LIMIT_PER_DAY:
+                bot.send_message(chat_id, f"Bạn đã đạt giới hạn {USER_SHARE_LIMIT_PER_DAY} share hôm nay. Vui lòng thử lại vào ngày mai.")
+                continue_sharing = False
+                break
+
             stt += 1
-            thread = threading.Thread(target=process_share, args=(tach, id_share, stt, chat_id, message_id))
+            thread = threading.Thread(target=process_share, args=(tach, id_share, stt, chat_id, message_id, user_id))
             thread.start()
             time.sleep(delay)
             shared_count += 1
@@ -263,14 +300,24 @@ def start_sharing(chat_id):
     stop_sharing_flags[chat_id] = False  # Reset
 
 
-def process_share(tach, id_share, stt, chat_id, message_id):
+def process_share(tach, id_share, stt, chat_id, message_id, user_id):
     global successful_shares
+    global user_share_counts  # access global variable
     if stop_sharing_flags.get(chat_id, False):
         return  # Stop immediately
 
     success = share_thread_telegram(tach, id_share, stt, chat_id, message_id)
     if success:
         successful_shares += 1
+
+        # Update daily share count
+        today = strftime("%Y-%m-%d")
+        if user_id not in user_share_counts:
+            user_share_counts[user_id] = {}
+        if today not in user_share_counts[user_id]:
+            user_share_counts[user_id][today] = 0
+        user_share_counts[user_id][today] += 1
+
         # Edit the message to show the updated count
         try:
             markup = types.InlineKeyboardMarkup()
