@@ -279,7 +279,12 @@ share_data = {}  # Store user-specific data
 @bot.message_handler(commands=['start'])
 def start(message):
     bot.reply_to(message, "Chào mừng! Sử dụng /share để bắt đầu.")
-
+    # Initialize or reset data on /start. Very important.
+    chat_id = message.chat.id
+    if chat_id in share_data:
+        del share_data[chat_id]
+    if chat_id in stop_sharing_flags:
+         del stop_sharing_flags[chat_id]
 
 @bot.message_handler(commands=['share'])
 def share_command(message):
@@ -309,12 +314,13 @@ def share_command(message):
     bot.send_message(chat_id,
                      "Thông tin bot:\n- Bot này được phát triển bởi [Trần Quân MBC/SecPhiPhai]\n- Hỗ trợ buff share bài viết trang cá nhân.\n- Liên hệ: [0376841471]\n- [https://linktr.ee/tranquan46]")
 
-    # Create a stop button
+    # --- START THE PROMPT SEQUENCE ---
+    # Create a stop button *with every prompt*.
     markup = types.InlineKeyboardMarkup()
     stop_button = types.InlineKeyboardButton("Dừng Share", callback_data="stop_share")
     markup.add(stop_button)
     bot.send_message(chat_id, "Vui lòng gửi file chứa cookie (cookies.txt).", reply_markup=markup)
-    bot.register_next_step_handler(message, process_cookie_file)
+    bot.register_next_step_handler(message, process_cookie_file) # Go directly to next step
 
 
 @bot.callback_query_handler(func=lambda call: call.data == "stop_share")
@@ -330,6 +336,9 @@ def stop_share_callback(call):
     for session in token_sessions.values():
         session.close()
     token_sessions = {}  # reset
+     # Clear share_data when stopping.
+    if chat_id in share_data:
+      del share_data[chat_id]
 
 
 def process_cookie_file(message):
@@ -360,37 +369,52 @@ def process_cookie_file(message):
 
 def process_id(message):
     chat_id = message.chat.id
+     # Stop button for every stage!
+    markup = types.InlineKeyboardMarkup()
+    stop_button = types.InlineKeyboardButton("Dừng Share", callback_data="stop_share")
+    markup.add(stop_button)
+
     id_share = message.text.strip()
     if not id_share.isdigit():
-        bot.reply_to(message, "ID không hợp lệ. Vui lòng nhập lại ID bài viết cần share.")
+        bot.reply_to(message, "ID không hợp lệ. Vui lòng nhập lại ID bài viết cần share.",reply_markup=markup)
         bot.register_next_step_handler(message, process_id)
         return
 
     share_data[chat_id]['id_share'] = id_share
-    bot.send_message(chat_id, "Vui lòng nhập delay giữa các lần share (giây).")
+    bot.send_message(chat_id, "Vui lòng nhập delay giữa các lần share (giây).",reply_markup=markup)
     bot.register_next_step_handler(message, process_delay)
 
 
 def process_delay(message):
     chat_id = message.chat.id
+    # Stop button
+    markup = types.InlineKeyboardMarkup()
+    stop_button = types.InlineKeyboardButton("Dừng Share", callback_data="stop_share")
+    markup.add(stop_button)
+
     delay_str = message.text.strip()
     try:
         delay = int(delay_str)
         if delay < 0:
             raise ValueError
     except ValueError:
-        bot.reply_to(message, "Delay không hợp lệ. Vui lòng nhập lại delay (giây) là một số dương.")
+        bot.reply_to(message, "Delay không hợp lệ. Vui lòng nhập lại delay (giây) là một số dương.",reply_markup=markup)
         bot.register_next_step_handler(message, process_delay)
         return
 
     share_data[chat_id]['delay'] = delay
-    bot.send_message(chat_id, "Vui lòng nhập tổng số lượng share (0 để không giới hạn).")
+    bot.send_message(chat_id, "Vui lòng nhập tổng số lượng share (0 để không giới hạn).",reply_markup=markup)
     bot.register_next_step_handler(message, process_total_shares)
 
 
 def process_total_shares(message):
     chat_id = message.chat.id
     user_id = message.from_user.id
+      # Stop button
+    markup = types.InlineKeyboardMarkup()
+    stop_button = types.InlineKeyboardButton("Dừng Share", callback_data="stop_share")
+    markup.add(stop_button)
+
     total_share_limit_str = message.text.strip()
     try:
         total_share_limit = int(total_share_limit_str)
@@ -398,7 +422,7 @@ def process_total_shares(message):
             raise ValueError
     except ValueError:
         bot.reply_to(message,
-                     "Số lượng share không hợp lệ. Vui lòng nhập lại tổng số lượng share (0 để không giới hạn) là một số dương.")
+                     "Số lượng share không hợp lệ. Vui lòng nhập lại tổng số lượng share (0 để không giới hạn) là một số dương.",reply_markup=markup)
         bot.register_next_step_handler(message, process_total_shares)
         return
 
@@ -509,6 +533,42 @@ def start_sharing(chat_id):
     for session in token_sessions.values():
         session.close()
     token_sessions = {}  # Reset
+
+
+def process_share(tach, id_share, stt, chat_id, user_id):
+    global successful_shares
+    global user_share_counts  # access global variable
+    if stop_sharing_flags.get(chat_id, False):
+        return  # Stop immediately
+
+    success = share_thread_telegram(tach, id_share, stt, chat_id)
+    if not success:
+        # share() function handles stopping when share fails
+        return
+
+    # If share was successful:
+    successful_shares += 1
+
+    # Update daily share count
+    today = strftime("%Y-%m-%d")
+    if user_id not in user_share_counts:
+        user_share_counts[user_id] = {}
+    if today not in user_share_counts[user_id]:
+        user_share_counts[user_id][today] = 0
+    user_share_counts[user_id][today] += 1
+
+
+
+
+def run_bot():
+    while True:
+        try:
+            logging.info("Bot is running...")
+            bot.infinity_polling()
+        except Exception as e:
+            logging.exception("Bot crashed. Restarting...")
+            time.sleep(15) # longer sleep
+
 
 
 def process_share(tach, id_share, stt, chat_id, user_id):
