@@ -2,3 +2,4 @@ requests
 pyTelegramBotAPI
 python-telegram-bot[job-queue]
 aiohttp
+fake_useragent
