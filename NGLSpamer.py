@@ -8,19 +8,17 @@ import random
 from time import strftime
 import telebot
 from telebot import types
-import uuid
 
-# Replace with your Telegram bot token
+# Replace with your actual bot token
 BOT_TOKEN = "7766543633:AAHd5v0ILieeJdpnRTCdh2RvzV1M8jli4uc"
+ADMIN_ID = 6940071938  # Replace with your Telegram User ID
+DAILY_SHARE_LIMIT = 5000
+
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# Replace with your Telegram admin user ID.  Use an integer.
-ADMIN_USER_ID = 6940071938  # Example: Replace with your actual admin ID
+user_states = {} # Track user's progress in the share process.
+user_share_counts = {}  # Track user's daily share counts.
 
-USER_SHARE_LIMIT_PER_DAY = 10000
-user_share_counts = {} # Keep track of shares per user per day
-
-# Improved User Agent Rotation (including mobile devices)
 user_agents = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0",
@@ -31,474 +29,234 @@ user_agents = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; Trident/7.0; rv:11.0) like Gecko",
     "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Mobile/15E148 Safari/604.1",
     "Mozilla/5.0 (iPad; CPU OS 17_2_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Mobile/15E148 Safari/604.1",
-    "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.259 Mobile Safari/537.36",
-    "Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/21.0 Chrome/120.0.6099.259 Mobile Safari/537.36",
-    "Mozilla/5.0 (Windows NT 11.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Brave/120.0.6099.259 Chrome/120.0.6099.259 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Vivaldi/6.2.3105.54 Chrome/120.0.6099.259 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.259 Safari/537.36 Vivaldi/6.2.3105.54",
-    "Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.259 Mobile Safari/537.36",
-    "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:122.0) Gecko/20100101 Firefox/122.0",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Opera/99.0.4779.89 Chrome/120.0.6099.259 Safari/537.36",
-    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Mobile/15E148 Safari/604.1",
-    "Mozilla/5.0 (Linux; Android 13; SM-A546U) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/20.0 Chrome/120.0.6099.259 Mobile Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_2) AppleWebKit/537.36 (KHTML, like Gecko) Edge/120.0.2210.144 Safari/537.36",
-    "Mozilla/5.0 (Linux; Android 14; Pixel 8a) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.259 Mobile Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.6099.280 Safari/537.36",
-    "Mozilla/5.0 (Linux; Android 12; Redmi Note 11) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.259 Mobile Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Linux; Android 13; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/20.0 Chrome/120.0.6099.259 Mobile Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_2_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.259 Safari/537.36",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/120.0.2210.144",
-    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.5 Mobile/15E148 Safari/604.1",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Linux; Android 11; SM-G998B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/18.0 Chrome/119.0.6099.259 Mobile Safari/537.36",
-    "Mozilla/5.0 (Windows NT 11.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14.3) AppleWebKit/537.36 (KHTML, like Gecko) Safari/537.36",
-    "Mozilla/5.0 (iPad; CPU OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1"
+    "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.259 Mobile Safari/537.36"
 ]
 
-# Global stop flag for each chat
-stop_sharing_flags = {}
-successful_shares = 0  # Global variable to track successful shares
-token_status = {} # Track status of each token
 gome_token = []
 
-# Proxy rotation (replace with your proxy list/source)
-proxies = [
-    None # Direct connection. Leave this EVEN if using proxies!
-]
-
-# Session Management
-token_sessions = {}  # Store requests.Session() objects for each token
-
-# Rate limiting settings (adaptive)
-BASE_REQUESTS_PER_MINUTE = 30  # Starting point.  Adjust!
-REQUESTS_PER_MINUTE_VARIATION = 10 # Add some randomness
-request_timestamps = {} # per token rate limiting
-
-def get_random_proxy():
-    return random.choice(proxies)
-
-def clear():
-    if(sys.platform.startswith('win')):
-        os.system('cls')
-    else:
-        os.system('clear')
-
-# Function to enforce rate limiting (adaptive per token)
-def rate_limit(token):
-    if token not in request_timestamps:
-        request_timestamps[token] = [] # init list for that token
-
-    current_time = time.time()
-    while request_timestamps[token] and request_timestamps[token][0] <= current_time - 60:
-        request_timestamps[token].pop(0)
-
-    # Adaptive Rate Limiting: Adjust based on success
-    if token_status.get(token, "live") == "live":
-        requests_per_minute = BASE_REQUESTS_PER_MINUTE + random.randint(-REQUESTS_PER_MINUTE_VARIATION, REQUESTS_PER_MINUTE_VARIATION)
-    else: # slow down failing tokens.
-        requests_per_minute = BASE_REQUESTS_PER_MINUTE // 2 + random.randint(-REQUESTS_PER_MINUTE_VARIATION // 2, REQUESTS_PER_MINUTE_VARIATION // 2)
-
-    if len(request_timestamps[token]) >= requests_per_minute:
-        sleep_time = 60 - (current_time - request_timestamps[token][0])
-        time.sleep(max(0, sleep_time))  # Ensure sleep time is not negative
-
-    request_timestamps[token].append(current_time)
-
-# Generate a random device ID (UUID4)
-def generate_device_id():
-    return str(uuid.uuid4())
-
-# Robust Header Generation Function
-def generate_headers(cookie, device_id):
-    user_agent = random.choice(user_agents)
-    accept_language = random.choice([
-        "vi-VN,vi;q=0.9,fr-FR;q=0.8,fr;q=0.7,en-US;q=0.6,en;q=0.5",
-        "en-US,en;q=0.9",
-        "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7"
-    ])  # Vary language preferences
-
-    headers = {
-        'authority': 'business.facebook.com',
-        'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
-        'accept-language': accept_language,
-        'cache-control': 'max-age=0',
-        'cookie': cookie,
-        'referer': 'https://www.facebook.com/',
-        'sec-ch-ua': '".Not/A)Brand";v="99", "Google Chrome";v="103", "Chromium";v="103"',
-        'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"Linux"',
-        'sec-fetch-dest': 'document',
-        'sec-fetch-mode': 'navigate',
-        'sec-fetch-site': 'same-origin',
-        'sec-fetch-user': '?1',
-        'upgrade-insecure-requests': '1',
-        'user-agent': user_agent,
-        'x-fb-device-group': '4481',  # Add realistic Facebook headers
-        'x-fb-friendly-name': 'ViewerBookmarksListQuery',
-        'x-fb-http-engine': 'Liger'
-    }
-    return headers
-
-def get_token(input_file, chat_id):
-    global gome_token
+def get_token(input_file):
     gome_token = []
     for cookie in input_file:
         cookie = cookie.strip()
         if not cookie:
             continue
-
-        device_id = generate_device_id()
-        headers = generate_headers(cookie, device_id)
-        cookie_token = f'{cookie}|None|{device_id}' # initial value.  None represents the absence of token at this time
+        header_ = {
+            'authority': 'business.facebook.com',
+            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+            'accept-language': 'vi-VN,vi;q=0.9,fr-FR;q=0.8,fr;q=0.7,en-US;q=0.6,en;q=0.5',
+            'cache-control': 'max-age=0',
+            'cookie': cookie,
+            'referer': 'https://www.facebook.com/',
+            'sec-ch-ua': '".Not/A)Brand";v="99", "Google Chrome";v="103", "Chromium";v="103"',
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-platform': '"Linux"',
+            'sec-fetch-dest': 'document',
+            'sec-fetch-mode': 'navigate',
+            'sec-fetch-site': 'same-origin',
+            'sec-fetch-user': '?1',
+            'upgrade-insecure-requests': '1',
+            'user-agent': random.choice(user_agents)
+        }
         try:
-            session = requests.Session() # Create a new session for each token
-            token_sessions[cookie_token] = session  # store session in a dictionary indexed by "cookie|device_id"
-
-            rate_limit(cookie_token)  # Rate limit token retrieval.
-            response = session.get('https://business.facebook.com/content_management', headers=headers, timeout=15, proxies={'http': get_random_proxy(), 'https': get_random_proxy()}) # Use session
-            response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
-
-            home_business = response.text
+            home_business = requests.get('https://business.facebook.com/content_management', headers=header_, timeout=15).text
             if 'EAAG' in home_business:
                 token = home_business.split('EAAG')[1].split('","')[0]
-                cookie_token = f'{cookie}|EAAG{token}|{device_id}'
+                cookie_token = f'{cookie}|EAAG{token}'
                 gome_token.append(cookie_token)
-                token_status[cookie_token] = "live"
             else:
-                token_status[cookie_token] = "die" # status die at token retrieval
-                print(f"[!] Không thể lấy token từ cookie: {cookie[:50]}... Cookie có thể không hợp lệ.")
-
+                bot.send_message(message.chat.id, f"[!] Không thể lấy token từ cookie: {cookie[:50]}... Cookie có thể không hợp lệ.")
         except requests.exceptions.RequestException as e:
-            token_status[cookie_token] = "die"
-            print(f"[!] Lỗi khi lấy token cho cookie: {cookie[:50]}... {e}")
-            bot.send_message(chat_id, f"Lỗi khi lấy token cho cookie: {cookie[:50]}... Dừng tool.")
-            stop_sharing_flags[chat_id] = True
-            if cookie_token in token_sessions:
-                token_sessions[cookie_token].close()
-                del token_sessions[cookie_token]
-            return []  # Stop immediately
-
+             bot.send_message(message.chat.id, f"[!] Lỗi khi lấy token cho cookie: {cookie[:50]}... {e}")
         except Exception as e:
-            token_status[cookie_token] = "die"
-            print(f"[!] Lỗi không mong muốn khi lấy token cho cookie: {cookie[:50]}... {e}")
-            bot.send_message(chat_id, f"Lỗi không mong muốn khi lấy token cho cookie: {cookie[:50]}... Dừng tool.")
-            stop_sharing_flags[chat_id] = True
-            if cookie_token in token_sessions:
-                token_sessions[cookie_token].close()
-                del token_sessions[cookie_token]
-            return []  # Stop immediately
-
+             bot.send_message(message.chat.id, f"[!] Lỗi không mong muốn khi lấy token cho cookie: {cookie[:50]}... {e}")
     return gome_token
 
-def share(tach, id_share, chat_id):
+def share(tach, id_share):
     cookie = tach.split('|')[0]
     token = tach.split('|')[1]
-    device_id = tach.split('|')[2] # Get device ID from token
-    headers = generate_headers(cookie, device_id) # consistent headers
-
-    session = token_sessions.get(tach) # Get the session object.
-
-    if not session: # should never happen but just in case
-        print(f"No session found for token: {tach[:50]}.  Creating new session (this is unexpected)")
-        session = requests.Session()  # create ad hoc, but this should be fixed
-        token_sessions[tach] = session # save adhoc
-
+    he = {
+        'accept': '*/*',
+        'accept-encoding': 'gzip, deflate',
+        'connection': 'keep-alive',
+        'content-length': '0',
+        'cookie': cookie,
+        'host': 'graph.facebook.com',
+        'user-agent': random.choice(user_agents),
+        'referer': f'https://m.facebook.com/{id_share}'
+    }
     try:
-        rate_limit(tach)  # Rate Limit per token
-
-        data = {'link': f'https://m.facebook.com/{id_share}', 'published': '0', 'access_token': token, 'device_id': device_id}
-        response = session.post(f'https://graph.facebook.com/me/feed', headers=headers, data=data, timeout=10, proxies={'http': get_random_proxy(), 'https': get_random_proxy()})
-        response.raise_for_status() # check for HTTP errors
-        res = response.json()
-
+        res = requests.post(f'https://graph.facebook.com/me/feed?link=https://m.facebook.com/{id_share}&published=0&access_token={token}', headers=he, timeout=10).json()
         if 'id' in res:
-            token_status[tach] = "live" # Share was success. Keep it live.
             return True
         else:
-            token_status[tach] = "die" # Token is dead
-            bot.send_message(chat_id, f"[!] Share thất bại: ID: {id_share} - Token Die - Dừng tool.")
-            stop_sharing_flags[chat_id] = True
             print(f"[!] Share thất bại: ID: {id_share} - Phản hồi: {res}")
             return False
-
     except requests.exceptions.RequestException as e:
-        token_status[tach] = "die"
-        bot.send_message(chat_id, f"[!] Lỗi request share: ID: {id_share} - {e} - Dừng tool.")
-        stop_sharing_flags[chat_id] = True
         print(f"[!] Lỗi request share: ID: {id_share} - {e}")
         return False
-
     except Exception as e:
-        token_status[tach] = "die"
-        bot.send_message(chat_id, f"[!] Lỗi không mong muốn khi share: ID: {id_share} - {e} - Dừng tool.")
-        stop_sharing_flags[chat_id] = True
         print(f"[!] Lỗi không mong muốn khi share: ID: {id_share} - {e}")
         return False
 
-def share_thread_telegram(tach, id_share, stt, chat_id, message_id):
-    if stop_sharing_flags.get(chat_id, False):
-        return False # Stop sharing
-    if share(tach, id_share, chat_id):
+
+def share_thread(user_id, tach, id_share, stt):
+    if share(tach, id_share):
+        bot.send_message(user_id, f'[{stt}] SHARE THÀNH CÔNG ID {id_share}')
         return True
     else:
+        bot.send_message(user_id, f'[{stt}] SHARE THẤT BẠI ID {id_share}')
         return False
 
-# Telegram Bot Handlers
-share_data = {}  # Store user-specific data
+def reset_daily_share_counts():
+    global user_share_counts
+    user_share_counts = {}
+    print("Daily share counts reset.")
+    threading.Timer(86400, reset_daily_share_counts).start()  # Reset every 24 hours (86400 seconds)
 
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.reply_to(message, "Chào mừng! Sử dụng /share để bắt đầu.")
+    bot.reply_to(message, "Chào mừng bạn đến với tool share Facebook!\nSử dụng /share để bắt đầu.")
 
 @bot.message_handler(commands=['share'])
 def share_command(message):
-    chat_id = message.chat.id
-    user_id = message.from_user.id
-    share_data[chat_id] = {}  # Initialize data for the user
+    user_id = message.chat.id
+    user_states[user_id] = {"step": "waiting_for_cookie_file"}
+    bot.send_message(user_id, "Vui lòng gửi file chứa Cookies (cookies.txt).")
 
-    # Check user's daily share count
-    today = strftime("%Y-%m-%d")
-    if user_id not in user_share_counts:
-        user_share_counts[user_id] = {}
-    if today not in user_share_counts[user_id]:
-        user_share_counts[user_id][today] = 0
+@bot.message_handler(content_types=['document'])
+def handle_document(message):
+    user_id = message.chat.id
 
-    if user_id != ADMIN_USER_ID and user_share_counts[user_id][today] >= USER_SHARE_LIMIT_PER_DAY:
-        bot.send_message(chat_id, f"Bạn đã đạt giới hạn {USER_SHARE_LIMIT_PER_DAY} share hôm nay. Vui lòng thử lại vào ngày mai.")
+    if user_id not in user_states or user_states[user_id]["step"] != "waiting_for_cookie_file":
+        bot.reply_to(message, "Vui lòng sử dụng lệnh /share trước khi gửi file.")
         return
 
-
-    # Display link and other information
-    bot.send_message(chat_id, "Thông tin bot:\n- Bot này được phát triển bởi [Your Name/Organization]\n- Hỗ trợ share bài viết lên trang cá nhân.\n- Liên hệ: [Your Contact Information/Link]")
-
-    # Create a stop button
-    markup = types.InlineKeyboardMarkup()
-    stop_button = types.InlineKeyboardButton("Dừng Share", callback_data="stop_share")
-    markup.add(stop_button)
-    bot.send_message(chat_id, "Vui lòng gửi file chứa cookie (cookies.txt).", reply_markup=markup)
-    bot.register_next_step_handler(message, process_cookie_file)
-
-@bot.callback_query_handler(func=lambda call: call.data == "stop_share")
-def stop_share_callback(call):
-    chat_id = call.message.chat.id
-    stop_sharing_flags[chat_id] = True  # Set the stop flag
-    bot.send_message(chat_id, "Đã nhận lệnh dừng share. Vui lòng chờ quá trình hoàn tất.")
-    global gome_token
-    gome_token.clear()
-
-    # close sessions (cleanup resources)
-    global token_sessions
-    for session in token_sessions.values():
-        session.close()
-    token_sessions = {} # reset
-
-def process_cookie_file(message):
-    chat_id = message.chat.id
-    user_id = message.from_user.id
     try:
-        if message.document is None:
-            bot.reply_to(message, "Vui lòng gửi file chứa cookie (cookies.txt).")
-            return
-
         file_info = bot.get_file(message.document.file_id)
         downloaded_file = bot.download_file(file_info.file_path)
-        file_content = downloaded_file.decode('utf-8').splitlines()
-        share_data[chat_id]['cookie_file'] = file_content
-        bot.send_message(chat_id, "Đã nhận file cookie. Vui lòng nhập ID bài viết cần share.")
-        bot.register_next_step_handler(message, process_id)
-    except Exception as e:
-        print(f"Error processing file: {e}") # Log error for debugging
-        bot.reply_to(message, "Vui lòng gửi file chứa cookie (cookies.txt).")  # User-friendly message
-        del share_data[chat_id]  # Clear data
+        cookie_file = downloaded_file.decode('utf-8').splitlines()  # Split into lines
+        user_states[user_id]["cookie_file"] = cookie_file
+        bot.send_message(user_id, "Đã nhận file Cookies. Vui lòng nhập ID bài viết cần share:")
+        user_states[user_id]["step"] = "waiting_for_post_id"
 
-def process_id(message):
-    chat_id = message.chat.id
-    id_share = message.text.strip()
-    if not id_share.isdigit():
-        bot.reply_to(message, "ID không hợp lệ. Vui lòng nhập lại ID bài viết cần share.")
-        bot.register_next_step_handler(message, process_id)
+    except Exception as e:
+        bot.reply_to(message, f"Lỗi khi xử lý file: {e}")
+        del user_states[user_id]
+
+@bot.message_handler(func=lambda message: user_states.get(message.chat.id, {}).get("step") == "waiting_for_post_id")
+def handle_post_id(message):
+    user_id = message.chat.id
+    post_id = message.text.strip()
+
+    if not post_id:
+        bot.send_message(user_id, "ID bài viết không hợp lệ. Vui lòng nhập lại:")
         return
 
-    share_data[chat_id]['id_share'] = id_share
-    bot.send_message(chat_id, "Vui lòng nhập delay giữa các lần share (giây).")
-    bot.register_next_step_handler(message, process_delay)
+    user_states[user_id]["post_id"] = post_id
+    bot.send_message(user_id, "Vui lòng nhập delay giữa các lần share (giây):")
+    user_states[user_id]["step"] = "waiting_for_delay"
 
-def process_delay(message):
-    chat_id = message.chat.id
+@bot.message_handler(func=lambda message: user_states.get(message.chat.id, {}).get("step") == "waiting_for_delay")
+def handle_delay(message):
+    user_id = message.chat.id
     delay_str = message.text.strip()
+
     try:
         delay = int(delay_str)
         if delay < 0:
-              raise ValueError
-    except ValueError:
-        bot.reply_to(message, "Delay không hợp lệ. Vui lòng nhập lại delay (giây) là một số dương.")
-        bot.register_next_step_handler(message, process_delay)
-        return
-
-    share_data[chat_id]['delay'] = delay
-    bot.send_message(chat_id, "Vui lòng nhập tổng số lượng share (0 để không giới hạn).")
-    bot.register_next_step_handler(message, process_total_shares)
-
-def process_total_shares(message):
-    chat_id = message.chat.id
-    user_id = message.from_user.id
-    total_share_limit_str = message.text.strip()
-    try:
-        total_share_limit = int(total_share_limit_str)
-        if total_share_limit < 0:
             raise ValueError
     except ValueError:
-        bot.reply_to(message, "Số lượng share không hợp lệ. Vui lòng nhập lại tổng số lượng share (0 để không giới hạn) là một số dương.")
-        bot.register_next_step_handler(message, process_total_shares)
+        bot.send_message(user_id, "Delay không hợp lệ. Vui lòng nhập một số nguyên dương:")
         return
 
-    share_data[chat_id]['total_share_limit'] = total_share_limit
+    user_states[user_id]["delay"] = delay
+    bot.send_message(user_id, "Vui lòng nhập tổng số lượng share (0 để không giới hạn):")
+    user_states[user_id]["step"] = "waiting_for_share_limit"
 
-    # Limit total shares based on user role
-    if user_id != ADMIN_USER_ID and total_share_limit > USER_SHARE_LIMIT_PER_DAY:
-        total_share_limit = USER_SHARE_LIMIT_PER_DAY
-        bot.send_message(chat_id, f"Bạn không phải là admin. Số lượng share sẽ bị giới hạn ở mức {USER_SHARE_LIMIT_PER_DAY}.")
-        share_data[chat_id]['total_share_limit'] = total_share_limit
+@bot.message_handler(func=lambda message: user_states.get(message.chat.id, {}).get("step") == "waiting_for_share_limit")
+def handle_share_limit(message):
+    user_id = message.chat.id
+    limit_str = message.text.strip()
 
-    start_sharing(chat_id)
-
-def start_sharing(chat_id):
-    data = share_data.get(chat_id)
-    user_id = bot.get_chat(chat_id).id # Get user ID safely
-
-    if not data:
-        bot.send_message(chat_id, "Dữ liệu không đầy đủ. Vui lòng bắt đầu lại bằng lệnh /share.")
+    try:
+        share_limit = int(limit_str)
+        if share_limit < 0:
+            raise ValueError
+    except ValueError:
+        bot.send_message(user_id, "Số lượng share không hợp lệ. Vui lòng nhập một số nguyên dương hoặc 0:")
         return
 
-    input_file = data['cookie_file']
-    id_share = data['id_share']
-    delay = data['delay']
-    total_share_limit = data['total_share_limit']
+    user_states[user_id]["share_limit"] = share_limit
+    start_sharing(message)
 
-    # Get tokens, stop if fails
-    all_tokens = get_token(input_file, chat_id)
-    if not all_tokens:
-        # get_token already sent a message to the user
-        del share_data[chat_id]
+def start_sharing(message):
+    user_id = message.chat.id
+    state = user_states.get(user_id)
 
+    if not state or "cookie_file" not in state or "post_id" not in state or "delay" not in state or "share_limit" not in state:
+        bot.send_message(user_id, "Có lỗi xảy ra. Vui lòng bắt đầu lại bằng lệnh /share.")
+        del user_states[user_id]
         return
 
+    cookie_file = state["cookie_file"]
+    post_id = state["post_id"]
+    delay = state["delay"]
+    share_limit = state["share_limit"]
+
+    all_tokens = get_token(cookie_file)
     total_live = len(all_tokens)
 
     if total_live == 0:
-        bot.send_message(chat_id, "Không tìm thấy token hợp lệ nào.")
-        del share_data[chat_id]
+        bot.send_message(user_id, "Không tìm thấy token hợp lệ nào. Vui lòng kiểm tra lại file Cookies.")
+        del user_states[user_id]
         return
 
-    bot.send_message(chat_id, f"Tìm thấy {total_live} token hợp lệ.")
+    bot.send_message(user_id, f"Đã tìm thấy {total_live} token hợp lệ. Bắt đầu share...")
 
-    # Send initial message with share success count and store its ID
-    markup = types.InlineKeyboardMarkup()
-    stop_button = types.InlineKeyboardButton("Dừng Share", callback_data="stop_share")
-    markup.add(stop_button)
-    initial_message = bot.send_message(chat_id, f"Bắt đầu share...\nĐang xử lý: {0} share thành công", reply_markup=markup)
-    message_id = initial_message.message_id  # Store the message ID
+    # Check daily limit
+    if user_id not in user_share_counts:
+        user_share_counts[user_id] = 0
 
-    share_data[chat_id]['message_id'] = message_id  # Store message_id in share_data
+    if user_id != ADMIN_ID and user_share_counts[user_id] >= DAILY_SHARE_LIMIT:
+        bot.send_message(user_id, f"Bạn đã đạt giới hạn {DAILY_SHARE_LIMIT} share mỗi ngày. Vui lòng thử lại sau.")
+        del user_states[user_id]
+        return
 
     stt = 0
     shared_count = 0
-    global successful_shares
-    successful_shares = 0  # Reset successful shares count
     continue_sharing = True
-    stop_sharing_flags[chat_id] = False  # Reset stop flag at start
 
-    while continue_sharing:
-        for tach in all_tokens:
-            if stop_sharing_flags.get(chat_id, False):
-                continue_sharing = False
-                break  # Exit inner loop
+    for tach in all_tokens:
+        if not continue_sharing:
+            break
 
-            # Daily Limit Check inside the loop
-            today = strftime("%Y-%m-%d")
-            if user_id != ADMIN_USER_ID and user_share_counts[user_id][today] >= USER_SHARE_LIMIT_PER_DAY:
-                bot.send_message(chat_id, f"Bạn đã đạt giới hạn {USER_SHARE_LIMIT_PER_DAY} share hôm nay. Vui lòng thử lại vào ngày mai.")
-                continue_sharing = False
-                break
+        stt += 1
+        thread = threading.Thread(target=sharing_thread, args=(user_id, tach, post_id, stt, delay))
+        thread.start()
+        time.sleep(delay)
+        shared_count += 1
 
-            if token_status.get(tach, "live") == "die":  # Skip dead tokens
-                continue
+        if user_id != ADMIN_ID:
+            user_share_counts[user_id] += 1
 
-            stt += 1
-            thread = threading.Thread(target=process_share, args=(tach, id_share, stt, chat_id, message_id, user_id))
-            thread.start()
-            time.sleep(delay)
-            shared_count += 1
+        if share_limit > 0 and shared_count >= share_limit:
+            continue_sharing = False
+            bot.send_message(user_id, f"Đã đạt giới hạn share là {share_limit} shares.")
+            break
 
-            if total_share_limit > 0 and shared_count >= total_share_limit:
-                continue_sharing = False
-                break
+        if user_id != ADMIN_ID and user_share_counts[user_id] >= DAILY_SHARE_LIMIT:
+            continue_sharing = False
+            bot.send_message(user_id, f"Bạn đã đạt giới hạn {DAILY_SHARE_LIMIT} share mỗi ngày. Vui lòng thử lại sau.")
+            break
 
-            if stop_sharing_flags.get(chat_id, False):
-                continue_sharing = False
-                break
+    del user_states[user_id]  # Clean up the user's state
 
-    for thread in threading.enumerate():
-        if thread != threading.current_thread():
-            thread.join()
+def sharing_thread(user_id, tach, post_id, stt, delay):
+        if share(tach, post_id):
+            bot.send_message(user_id, f'[{stt}] SHARE THÀNH CÔNG ID {post_id}')
+        else:
+            bot.send_message(user_id, f'[{stt}] SHARE THẤT BẠI ID {post_id}')
 
-    bot.send_message(chat_id, "Quá trình share hoàn tất.")
-    if total_share_limit > 0 and shared_count >= total_share_limit:
-        bot.send_message(chat_id, f"Đạt giới hạn share là {total_share_limit} shares.")
-    bot.send_message(chat_id, f"Tổng cộng {successful_shares} share thành công.") # Final count
-
-    del share_data[chat_id]
-    global gome_token
-    gome_token.clear()
-    stop_sharing_flags[chat_id] = False  # Reset
-
-    # Cleanup sessions
-    global token_sessions
-    for session in token_sessions.values():
-        session.close()
-    token_sessions = {}  # Reset
-
-def process_share(tach, id_share, stt, chat_id, message_id, user_id):
-    global successful_shares
-    global user_share_counts  # access global variable
-    if stop_sharing_flags.get(chat_id, False):
-        return  # Stop immediately
-
-    success = share_thread_telegram(tach, id_share, stt, chat_id, message_id)
-    if not success:
-        #share() function handles stopping when share fails
-        return
-
-    # If share was successful:
-    successful_shares += 1
-
-    # Update daily share count
-    today = strftime("%Y-%m-%d")
-    if user_id not in user_share_counts:
-        user_share_counts[user_id] = {}
-    if today not in user_share_counts[user_id]:
-        user_share_counts[user_id][today] = 0
-    user_share_counts[user_id][today] += 1
-
-    # Edit the message to show the updated count
-    try:
-        markup = types.InlineKeyboardMarkup()
-        stop_button = types.InlineKeyboardButton("Dừng Share", callback_data="stop_share")
-        markup.add(stop_button)
-
-        bot.edit_message_text(chat_id=chat_id, message_id=message_id,
-                              text=f"Bắt đầu share...\nĐang xử lý: {successful_shares} share thành công", reply_markup=markup) # Include stop button in edit
-    except Exception as e:
-        print(f"Error editing message: {e}")
-
-if __name__ == "__main__":
-    try:
-        print("Bot is running...")
-        bot.infinity_polling()
-    except KeyboardInterrupt:
-        print("Bot stopped.")
-        sys.exit()
+if __name__ == '__main__':
+    reset_daily_share_counts() # Start the daily reset timer.
+    bot.infinity_polling()
