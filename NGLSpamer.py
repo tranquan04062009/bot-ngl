@@ -15,7 +15,7 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Replace with your Telegram bot token
-BOT_TOKEN = "7766543633:AAHd5v0ILieeJdpnRTCdh2RvzV1M8jli4uc"
+BOT_TOKEN = "7766543633:AAHd5v0ILieeJdpnRTCdh2RvzV1M8jli4uc"  # Replace with your actual bot token
 bot = telebot.TeleBot(BOT_TOKEN)
 
 # Replace with your Telegram admin user ID. Use an integer.
@@ -63,14 +63,20 @@ request_timestamps = {}  # per token rate limiting
 # Data timestamp for cleanup
 data_timestamps = {}
 
+# Tracking when to send the final report
+report_sent = {}
+
+
 def get_random_proxy():
     return random.choice(proxies)
+
 
 def clear():
     if sys.platform.startswith('win'):
         os.system('cls')
     else:
         os.system('clear')
+
 
 # Function to enforce rate limiting (adaptive per token)
 def rate_limit(token):
@@ -83,9 +89,11 @@ def rate_limit(token):
 
     # Adaptive Rate Limiting: Adjust based on success
     if token_status.get(token, "live") == "live":
-        requests_per_minute = BASE_REQUESTS_PER_MINUTE + random.randint(-REQUESTS_PER_MINUTE_VARIATION, REQUESTS_PER_MINUTE_VARIATION)
+        requests_per_minute = BASE_REQUESTS_PER_MINUTE + random.randint(-REQUESTS_PER_MINUTE_VARIATION,
+                                                                          REQUESTS_PER_MINUTE_VARIATION)
     else:  # slow down failing tokens.
-        requests_per_minute = BASE_REQUESTS_PER_MINUTE // 2 + random.randint(-REQUESTS_PER_MINUTE_VARIATION // 2, REQUESTS_PER_MINUTE_VARIATION // 2)
+        requests_per_minute = BASE_REQUESTS_PER_MINUTE // 2 + random.randint(-REQUESTS_PER_MINUTE_VARIATION // 2,
+                                                                              REQUESTS_PER_MINUTE_VARIATION // 2)
 
     if len(request_timestamps[token]) >= requests_per_minute:
         sleep_time = 60 - (current_time - request_timestamps[token][0])
@@ -93,9 +101,11 @@ def rate_limit(token):
 
     request_timestamps[token].append(current_time)
 
+
 # Generate a random device ID (UUID4)
 def generate_device_id():
     return str(uuid.uuid4())
+
 
 # Robust Header Generation Function
 def generate_headers(cookie, device_id):
@@ -128,9 +138,12 @@ def generate_headers(cookie, device_id):
     }
     return headers
 
-def get_token(input_file, chat_id):
+
+def get_token(input_file, chat_id, user_id):
     global gome_token
     gome_token = []
+    user_key = (chat_id, user_id)
+
     for cookie in input_file:
         cookie = cookie.strip()
         if not cookie:
@@ -144,7 +157,9 @@ def get_token(input_file, chat_id):
             token_sessions[cookie_token] = session  # store session in a dictionary indexed by "cookie|device_id"
 
             rate_limit(cookie_token)  # Rate limit token retrieval.
-            response = session.get('https://business.facebook.com/content_management', headers=headers, timeout=15, proxies={'http': get_random_proxy(), 'https': get_random_proxy()})  # Use session
+            response = session.get('https://business.facebook.com/content_management', headers=headers, timeout=15,
+                                   proxies={'http': get_random_proxy(),
+                                            'https': get_random_proxy()})  # Use session
             response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
 
             home_business = response.text
@@ -155,49 +170,58 @@ def get_token(input_file, chat_id):
                 token_status[cookie_token] = "live"
             else:
                 token_status[cookie_token] = "die"  # status die at token retrieval
-                logging.warning(f"[!] Không thể lấy token từ cookie: {cookie[:50]}... Cookie có thể không hợp lệ.")
+                logging.warning(
+                    f"[!] User {user_id} - Không thể lấy token từ cookie: {cookie[:50]}... Cookie có thể không hợp lệ.")
                 bot.send_message(chat_id, f"Không thể lấy token từ cookie: {cookie[:50]}... Cookie có thể không hợp lệ.")
 
         except requests.exceptions.RequestException as e:
             token_status[cookie_token] = "die"
-            logging.error(f"[!] Lỗi khi lấy token cho cookie: {cookie[:50]}... {e}")
+            logging.error(f"[!] User {user_id} - Lỗi khi lấy token cho cookie: {cookie[:50]}... {e}")
             bot.send_message(chat_id, f"Lỗi khi lấy token cho cookie: {cookie[:50]}... Dừng tool.")
-            stop_sharing_flags[chat_id] = True
+            stop_sharing_flags[user_key] = True
             if cookie_token in token_sessions:
                 token_sessions[cookie_token].close()
                 del token_sessions[cookie_token]
+            cleanup_data(chat_id, user_id)  # Cleanup on error
             return []  # Stop immediately
 
         except Exception as e:
             token_status[cookie_token] = "die"
-            logging.exception(f"[!] Lỗi không mong muốn khi lấy token cho cookie: {cookie[:50]}... {e}")
+            logging.exception(
+                f"[!] User {user_id} - Lỗi không mong muốn khi lấy token cho cookie: {cookie[:50]}... {e}")
             bot.send_message(chat_id, f"Lỗi không mong muốn khi lấy token cho cookie: {cookie[:50]}... Dừng tool.")
-            stop_sharing_flags[chat_id] = True
+            stop_sharing_flags[user_key] = True
             if cookie_token in token_sessions:
                 token_sessions[cookie_token].close()
                 del token_sessions[cookie_token]
+            cleanup_data(chat_id, user_id)  # Cleanup on error
             return []  # Stop immediately
 
     return gome_token
 
-def share(tach, id_share, chat_id):
+
+def share(tach, id_share, chat_id, user_id):
     cookie = tach.split('|')[0]
     token = tach.split('|')[1]
     device_id = tach.split('|')[2]  # Get device ID from token
     headers = generate_headers(cookie, device_id)  # consistent headers
+    user_key = (chat_id, user_id)
 
     session = token_sessions.get(tach)  # Get the session object.
 
     if not session:  # should never happen but just in case
-        logging.warning(f"No session found for token: {tach[:50]}. Creating new session (this is unexpected)")
+        logging.warning(
+            f"User {user_id} - No session found for token: {tach[:50]}. Creating new session (this is unexpected)")
         session = requests.Session()  # create ad hoc, but this should be fixed
         token_sessions[tach] = session  # save adhoc
 
     try:
         rate_limit(tach)  # Rate Limit per token
 
-        data = {'link': f'https://m.facebook.com/{id_share}', 'published': '0', 'access_token': token, 'device_id': device_id}
-        response = session.post(f'https://graph.facebook.com/me/feed', headers=headers, data=data, timeout=10, proxies={'http': get_random_proxy(), 'https': get_random_proxy()})
+        data = {'link': f'https://m.facebook.com/{id_share}', 'published': '0', 'access_token': token,
+                'device_id': device_id}
+        response = session.post(f'https://graph.facebook.com/me/feed', headers=headers, data=data, timeout=10,
+                                proxies={'http': get_random_proxy(), 'https': get_random_proxy()})
         response.raise_for_status()  # check for HTTP errors
         res = response.json()
 
@@ -206,42 +230,47 @@ def share(tach, id_share, chat_id):
             return True
         else:
             token_status[tach] = "die"  # Token is dead
-            logging.warning(f"[!] Share thất bại: ID: {id_share} - Token Die - Phản hồi: {res}")
-            #bot.send_message(chat_id, f"[!] Share thất bại: ID: {id_share} - Token Die - Dừng tool.") # No longer send message on each failure
-            stop_sharing_flags[chat_id] = True
+            logging.warning(f"User {user_id} - [!] Share thất bại: ID: {id_share} - Token Die - Phản hồi: {res}")
+            # bot.send_message(chat_id, f"[!] Share thất bại: ID: {id_share} - Token Die - Dừng tool.") # No longer send message on each failure
+            stop_sharing_flags[user_key] = True
             return False
 
     except requests.exceptions.RequestException as e:
         token_status[tach] = "die"
-        logging.error(f"[!] Lỗi request share: ID: {id_share} - {e}")
-        #bot.send_message(chat_id, f"[!] Lỗi request share: ID: {id_share} - {e} - Dừng tool.") # No longer send message on each failure
-        stop_sharing_flags[chat_id] = True
+        logging.error(f"User {user_id} - [!] Lỗi request share: ID: {id_share} - {e}")
+        # bot.send_message(chat_id, f"[!] Lỗi request share: ID: {id_share} - {e} - Dừng tool.") # No longer send message on each failure
+        stop_sharing_flags[user_key] = True
         return False
 
     except Exception as e:
         token_status[tach] = "die"
-        logging.exception(f"[!] Lỗi không mong muốn khi share: ID: {id_share} - {e}")
-        #bot.send_message(chat_id, f"[!] Lỗi không mong muốn khi share: ID: {id_share} - {e} - Dừng tool.") # No longer send message on each failure
-        stop_sharing_flags[chat_id] = True
+        logging.exception(f"User {user_id} - [!] Lỗi không mong muốn khi share: ID: {id_share} - {e}")
+        # bot.send_message(chat_id, f"[!] Lỗi không mong muốn khi share: ID: {id_share} - {e} - Dừng tool.") # No longer send message on each failure
+        stop_sharing_flags[user_key] = True
         return False
 
-def share_thread_telegram(tach, id_share, stt, chat_id, user_id): #Remove message_id as it is no longer used
-    if stop_sharing_flags.get(chat_id, False):
+
+def share_thread_telegram(tach, id_share, stt, chat_id, user_id):  # Remove message_id as it is no longer used
+    user_key = (chat_id, user_id)
+    if stop_sharing_flags.get(user_key, False):
         return False  # Stop sharing
-    if share(tach, id_share, chat_id):
-        #Update successful share count
-        successful_shares[chat_id] = successful_shares.get(chat_id, 0) + 1 #Increase share count for that chat
+    if share(tach, id_share, chat_id, user_id):
+        # Update successful share count
+        successful_shares[user_key] = successful_shares.get(user_key, 0) + 1  # Increase share count for that chat
         return True
     else:
         return False
 
+
 # Telegram Bot Handlers
 share_data = {}  # Store user-specific data
+
 
 @bot.message_handler(commands=['start'])
 def start(message):
     chat_id = message.chat.id
     user_id = message.from_user.id
+    user_key = (chat_id, user_id)
 
     if chat_id not in ALLOWED_CHAT_IDS and message.chat.type != 'private':
         bot.reply_to(message, "Xin lỗi, bot này chỉ hoạt động trong các nhóm được cho phép.")
@@ -253,10 +282,12 @@ def start(message):
 
     bot.reply_to(message, "Chào mừng! Sử dụng /share để bắt đầu.")
 
+
 @bot.message_handler(commands=['share'])
 def share_command(message):
     chat_id = message.chat.id
     user_id = message.from_user.id
+    user_key = (chat_id, user_id)
 
     # Check if the bot is used outside allowed chat IDs
     if chat_id not in ALLOWED_CHAT_IDS and message.chat.type != 'private':
@@ -267,11 +298,12 @@ def share_command(message):
         bot.reply_to(message, "Xin lỗi, bot này không hỗ trợ chat riêng. Hãy sử dụng nó trong nhóm được cho phép.")
         return
 
-    share_data[chat_id] = {}  # Initialize data for the user
-    successful_shares[chat_id] = 0 #Initialize the share counter
+    share_data[user_key] = {}  # Initialize data for the user
+    successful_shares[user_key] = 0  # Initialize the share counter
+    report_sent[user_key] = False  # Initialize report_sent flag
 
     # Update data timestamp
-    update_data_timestamp(chat_id)
+    update_data_timestamp(chat_id, user_id)
 
     # Check user's daily share count
     today = strftime("%Y-%m-%d")
@@ -281,11 +313,13 @@ def share_command(message):
         user_share_counts[user_id][today] = 0
 
     if user_id != ADMIN_USER_ID and user_share_counts[user_id][today] >= USER_SHARE_LIMIT_PER_DAY:
-        bot.send_message(chat_id, f"Bạn đã đạt giới hạn {USER_SHARE_LIMIT_PER_DAY} share hôm nay. Vui lòng thử lại vào ngày mai.")
+        bot.send_message(chat_id,
+                         f"Bạn đã đạt giới hạn {USER_SHARE_LIMIT_PER_DAY} share hôm nay. Vui lòng thử lại vào ngày mai.")
         return
 
     # Display link and other information
-    bot.send_message(chat_id, "Thông tin bot:\n- Bot này được phát triển bởi [Trần Quân/SecPhiPhai]\n- Hỗ trợ share bài viết trang cá nhân.\n- Liên hệ: [0376841471] \n- [https://linktr.ee/tranquan46]")
+    bot.send_message(chat_id,
+                     "Thông tin bot:\n- Bot này được phát triển bởi [Trần Quân/SecPhiPhai]\n- Hỗ trợ share bài viết trang cá nhân.\n- Liên hệ: [0376841471] \n- [https://linktr.ee/tranquan46]")
 
     # Create a stop button
     markup = types.InlineKeyboardMarkup()
@@ -294,10 +328,13 @@ def share_command(message):
     bot.send_message(chat_id, "Vui lòng gửi file chứa cookie (cookies.txt).", reply_markup=markup)
     bot.register_next_step_handler(message, process_cookie_file)
 
+
 @bot.callback_query_handler(func=lambda call: call.data == "stop_share")
 def stop_share_callback(call):
     chat_id = call.message.chat.id
-    stop_sharing_flags[chat_id] = True  # Set the stop flag
+    user_id = call.from_user.id
+    user_key = (chat_id, user_id)
+    stop_sharing_flags[user_key] = True  # Set the stop flag
     bot.send_message(chat_id, "Đã nhận lệnh dừng share. Vui lòng chờ quá trình hoàn tất.")
     global gome_token
     gome_token.clear()
@@ -308,9 +345,13 @@ def stop_share_callback(call):
         session.close()
     token_sessions = {}  # reset
 
+    cleanup_data(chat_id, user_id)  # Cleanup when stopped
+
+
 def process_cookie_file(message):
     chat_id = message.chat.id
     user_id = message.from_user.id
+    user_key = (chat_id, user_id)
     try:
         if message.document is None:
             bot.reply_to(message, "Vui lòng gửi file chứa cookie (cookies.txt).")
@@ -319,8 +360,8 @@ def process_cookie_file(message):
         file_info = bot.get_file(message.document.file_id)
         downloaded_file = bot.download_file(file_info.file_path)
         file_content = downloaded_file.decode('utf-8').splitlines()
-        share_data[chat_id]['cookie_file'] = file_content
-        update_data_timestamp(chat_id)
+        share_data[user_key]['cookie_file'] = file_content
+        update_data_timestamp(chat_id, user_id)
 
         # Delete the message containing the cookie file
         bot.delete_message(chat_id, message.message_id)
@@ -328,25 +369,31 @@ def process_cookie_file(message):
         bot.send_message(chat_id, "Đã nhận file cookie. Vui lòng nhập ID bài viết cần share.")
         bot.register_next_step_handler(message, process_id)
     except Exception as e:
-        logging.exception(f"Error processing file for chat_id {chat_id}: {e}")
+        logging.exception(f"User {user_id} - Error processing file for chat_id {chat_id}: {e}")
         bot.reply_to(message, "Lỗi xử lý file cookie. Vui lòng thử lại.")  # User-friendly message
-        cleanup_data(chat_id)  # Clear data
+        cleanup_data(chat_id, user_id)  # Clear data
+
 
 def process_id(message):
     chat_id = message.chat.id
+    user_id = message.from_user.id
+    user_key = (chat_id, user_id)
     id_share = message.text.strip()
     if not id_share.isdigit():
         bot.reply_to(message, "ID không hợp lệ. Vui lòng nhập lại ID bài viết cần share.")
         bot.register_next_step_handler(message, process_id)
         return
 
-    share_data[chat_id]['id_share'] = id_share
-    update_data_timestamp(chat_id)
+    share_data[user_key]['id_share'] = id_share
+    update_data_timestamp(chat_id, user_id)
     bot.send_message(chat_id, "Vui lòng nhập delay giữa các lần share (giây).")
     bot.register_next_step_handler(message, process_delay)
 
+
 def process_delay(message):
     chat_id = message.chat.id
+    user_id = message.from_user.id
+    user_key = (chat_id, user_id)
     delay_str = message.text.strip()
     try:
         delay = int(delay_str)
@@ -357,37 +404,42 @@ def process_delay(message):
         bot.register_next_step_handler(message, process_delay)
         return
 
-    share_data[chat_id]['delay'] = delay
-    update_data_timestamp(chat_id)
+    share_data[user_key]['delay'] = delay
+    update_data_timestamp(chat_id, user_id)
     bot.send_message(chat_id, "Vui lòng nhập tổng số lượng share (0 để không giới hạn).")
     bot.register_next_step_handler(message, process_total_shares)
+
 
 def process_total_shares(message):
     chat_id = message.chat.id
     user_id = message.from_user.id
+    user_key = (chat_id, user_id)
     total_share_limit_str = message.text.strip()
     try:
         total_share_limit = int(total_share_limit_str)
         if total_share_limit < 0:
             raise ValueError
     except ValueError:
-        bot.reply_to(message, "Số lượng share không hợp lệ. Vui lòng nhập lại tổng số lượng share (0 để không giới hạn) là một số dương.")
+        bot.reply_to(message,
+                     "Số lượng share không hợp lệ. Vui lòng nhập lại tổng số lượng share (0 để không giới hạn) là một số dương.")
         bot.register_next_step_handler(message, process_total_shares)
         return
 
-    share_data[chat_id]['total_share_limit'] = total_share_limit
-    update_data_timestamp(chat_id)
+    share_data[user_key]['total_share_limit'] = total_share_limit
+    update_data_timestamp(chat_id, user_id)
 
     # Limit total shares based on user role
     if user_id != ADMIN_USER_ID and total_share_limit > USER_SHARE_LIMIT_PER_DAY:
         total_share_limit = USER_SHARE_LIMIT_PER_DAY
         bot.send_message(chat_id, f"Bạn không phải là admin. Số lượng share sẽ bị giới hạn ở mức {USER_SHARE_LIMIT_PER_DAY}.")
-        share_data[chat_id]['total_share_limit'] = total_share_limit
+        share_data[user_key]['total_share_limit'] = total_share_limit
 
-    start_sharing(chat_id, user_id) #Pass user_id to start_sharing
+    start_sharing(chat_id, user_id, message.from_user.username)  # Pass user_id and username to start_sharing
 
-def start_sharing(chat_id, user_id):
-    data = share_data.get(chat_id)
+
+def start_sharing(chat_id, user_id, username):
+    user_key = (chat_id, user_id)
+    data = share_data.get(user_key)
 
     if not data:
         bot.send_message(chat_id, "Dữ liệu không đầy đủ. Vui lòng bắt đầu lại bằng lệnh /share.")
@@ -399,17 +451,17 @@ def start_sharing(chat_id, user_id):
     total_share_limit = data['total_share_limit']
 
     # Get tokens, stop if fails
-    all_tokens = get_token(input_file, chat_id)
+    all_tokens = get_token(input_file, chat_id, user_id)
     if not all_tokens:
         # get_token already sent a message to the user
-        cleanup_data(chat_id)
+        cleanup_data(chat_id, user_id)
         return
 
     total_live = len(all_tokens)
 
     if total_live == 0:
         bot.send_message(chat_id, "Không tìm thấy token hợp lệ nào.")
-        cleanup_data(chat_id)
+        cleanup_data(chat_id, user_id)
         return
 
     bot.send_message(chat_id, f"Tìm thấy {total_live} token hợp lệ.")
@@ -418,25 +470,27 @@ def start_sharing(chat_id, user_id):
     markup = types.InlineKeyboardMarkup()
     stop_button = types.InlineKeyboardButton("Dừng Share", callback_data="stop_share")
     markup.add(stop_button)
-    bot.send_message(chat_id, "Bắt đầu share...", reply_markup=markup) #Simplified starting message.  Removed the counter update
+    bot.send_message(chat_id, "Bắt đầu share...", reply_markup=markup)  # Simplified starting message.  Removed the counter update
 
     stt = 0
     shared_count = 0
-    #global successful_shares #No longer global. Use the one defined per chat_id
-    successful_shares[chat_id] = 0  # Reset successful shares count for this chat_id
+    # global successful_shares #No longer global. Use the one defined per chat_id
+    successful_shares[user_key] = 0  # Reset successful shares count for this chat_id
     continue_sharing = True
-    stop_sharing_flags[chat_id] = False  # Reset stop flag at start
+    stop_sharing_flags[user_key] = False  # Reset stop flag at start
+    report_sent[user_key] = False  # Ensure the report will be sent if total_share_limit is reached.
 
     while continue_sharing:
         for tach in all_tokens:
-            if stop_sharing_flags.get(chat_id, False):
+            if stop_sharing_flags.get(user_key, False):
                 continue_sharing = False
                 break  # Exit inner loop
 
             # Daily Limit Check inside the loop
             today = strftime("%Y-%m-%d")
             if user_id != ADMIN_USER_ID and user_share_counts[user_id][today] >= USER_SHARE_LIMIT_PER_DAY:
-                bot.send_message(chat_id, f"Bạn đã đạt giới hạn {USER_SHARE_LIMIT_PER_DAY} share hôm nay. Vui lòng thử lại vào ngày mai.")
+                bot.send_message(chat_id,
+                                 f"Bạn đã đạt giới hạn {USER_SHARE_LIMIT_PER_DAY} share hôm nay. Vui lòng thử lại vào ngày mai.")
                 continue_sharing = False
                 break
 
@@ -444,7 +498,8 @@ def start_sharing(chat_id, user_id):
                 continue
 
             stt += 1
-            thread = threading.Thread(target=process_share, args=(tach, id_share, stt, chat_id, user_id)) #Removed message_id
+            thread = threading.Thread(target=process_share,
+                                      args=(tach, id_share, stt, chat_id, user_id, username))  # Removed message_id
             thread.start()
             time.sleep(delay)
             shared_count += 1
@@ -453,7 +508,7 @@ def start_sharing(chat_id, user_id):
                 continue_sharing = False
                 break
 
-            if stop_sharing_flags.get(chat_id, False):
+            if stop_sharing_flags.get(user_key, False):
                 continue_sharing = False
                 break
 
@@ -461,15 +516,14 @@ def start_sharing(chat_id, user_id):
         if thread != threading.current_thread():
             thread.join()
 
-    bot.send_message(chat_id, "Quá trình share hoàn tất.")
-    if total_share_limit > 0 and shared_count >= total_share_limit:
-        bot.send_message(chat_id, f"Đạt giới hạn share là {total_share_limit} shares.")
-    bot.send_message(chat_id, f"@{message.from_user.username}, Tổng cộng {successful_shares[chat_id]} share thành công.")  # Final count message.  Use username instead of first_name + last_name
+    # Send final report if not already sent
+    if not report_sent.get(user_key, False):
+        send_final_report(chat_id, user_id, username)
 
-    cleanup_data(chat_id)
+    cleanup_data(chat_id, user_id)
     global gome_token
     gome_token.clear()
-    stop_sharing_flags[chat_id] = False  # Reset
+    stop_sharing_flags[user_key] = False  # Reset
 
     # Cleanup sessions
     global token_sessions
@@ -477,17 +531,19 @@ def start_sharing(chat_id, user_id):
         try:
             session.close()
         except Exception as e:
-            logging.exception(f"Error closing session: {e}")
+            logging.exception(f"User {user_id} - Error closing session: {e}")
     token_sessions = {}  # Reset
 
-def process_share(tach, id_share, stt, chat_id, user_id): #Removed message_id argument
-    #global successful_shares #No longer global, each chat_id has it's counter
+
+def process_share(tach, id_share, stt, chat_id, user_id, username):  # Removed message_id argument
+    user_key = (chat_id, user_id)
+    # global successful_shares #No longer global, each chat_id has it's counter
     global user_share_counts  # access global variable
 
-    if stop_sharing_flags.get(chat_id, False):
+    if stop_sharing_flags.get(user_key, False):
         return  # Stop immediately
 
-    success = share_thread_telegram(tach, id_share, stt, chat_id, user_id) #Removed message_id argument
+    success = share_thread_telegram(tach, id_share, stt, chat_id, user_id)  # Removed message_id argument
     if not success:
         # share() function handles stopping when share fails
         return
@@ -500,33 +556,55 @@ def process_share(tach, id_share, stt, chat_id, user_id): #Removed message_id ar
         user_share_counts[user_id][today] = 0
     user_share_counts[user_id][today] += 1
 
-    #No longer updating the message. All updates will occur at the end.
-    #No need to remove markup
+    # Check if total_share_limit is reached, and if it is, send the final report and set the flag
+    if share_data[user_key]['total_share_limit'] > 0 and successful_shares[user_key] >= share_data[user_key][
+        'total_share_limit'] and not report_sent.get(user_key, False):
+        send_final_report(chat_id, user_id, username)
 
-def update_data_timestamp(chat_id):
-    data_timestamps[chat_id] = time.time()
 
-def cleanup_data(chat_id):
-    global share_data, user_share_counts, request_timestamps, token_sessions, successful_shares
+def send_final_report(chat_id, user_id, username):
+    user_key = (chat_id, user_id)
+    bot.send_message(chat_id, "Quá trình share hoàn tất.")
+    if share_data[user_key]['total_share_limit'] > 0 and successful_shares[user_key] >= share_data[user_key][
+        'total_share_limit']:
+        bot.send_message(chat_id, f"Đạt giới hạn share là {share_data[user_key]['total_share_limit']} shares.")
+    bot.send_message(chat_id, f"@{username}, Tổng cộng {successful_shares[user_key]} share thành công.")  # Final count message.  Use username instead of first_name + last_name
+    report_sent[user_key] = True  # Set the flag to prevent duplicate reports
 
-    logging.info(f"Cleaning up data for chat_id: {chat_id}")
 
-    # Clear data specific to the chat_id
-    if chat_id in share_data:
-        del share_data[chat_id]
-    if chat_id in stop_sharing_flags:
-        del stop_sharing_flags[chat_id]
-    if chat_id in successful_shares:
-        del successful_shares[chat_id] #Delete successful share counter
+# No longer updating the message. All updates will occur at the end.
+# No need to remove markup
 
-    # Clean up token related data
-    tokens_to_remove = [token for token in token_sessions if str(chat_id) in token] # VERY DANGEROUS. DO NOT DO THIS
+def update_data_timestamp(chat_id, user_id):
+    user_key = (chat_id, user_id)
+    data_timestamps[user_key] = time.time()
+
+
+def cleanup_data(chat_id, user_id):
+    user_key = (chat_id, user_id)
+    global share_data, user_share_counts, request_timestamps, token_sessions, successful_shares, report_sent
+
+    logging.info(f"User {user_id} - Cleaning up data for chat_id: {chat_id}")
+
+    # Clear data specific to the user_key
+    if user_key in share_data:
+        del share_data[user_key]
+    if user_key in stop_sharing_flags:
+        del stop_sharing_flags[user_key]
+    if user_key in successful_shares:
+        del successful_shares[user_key]  # Delete successful share counter
+    if user_key in report_sent:
+        del report_sent[user_key]
+
+    # Clean up token related data. This part needs extra attention to avoid unintended consequences.
+    # Iterate through token_sessions and check if the token is associated with the user.
+    tokens_to_remove = [token for token in token_sessions if token.startswith(f'{user_key}')]  # Safer check
     for token in tokens_to_remove:
         if token in token_sessions:
             try:
                 token_sessions[token].close()
             except Exception as e:
-                logging.exception(f"Error closing session for token {token}: {e}")
+                logging.exception(f"User {user_id} - Error closing session for token {token}: {e}")
             del token_sessions[token]
         if token in request_timestamps:
             del request_timestamps[token]
@@ -534,22 +612,25 @@ def cleanup_data(chat_id):
             del token_status[token]
 
     # Remove timestamp
-    if chat_id in data_timestamps:
-        del data_timestamps[chat_id]
+    if user_key in data_timestamps:
+        del data_timestamps[user_key]
+
 
 def periodic_cleanup():
     while True:
         current_time = time.time()
-        chat_ids_to_cleanup = [
-            chat_id for chat_id, timestamp in data_timestamps.items()
+        keys_to_cleanup = [
+            user_key for user_key, timestamp in data_timestamps.items()
             if current_time - timestamp > DATA_RETENTION_TIME
         ]
 
-        for chat_id in chat_ids_to_cleanup:
-            logging.info(f"Data retention time exceeded for chat_id: {chat_id}. Cleaning up.")
-            cleanup_data(chat_id)
+        for user_key in keys_to_cleanup:
+            chat_id, user_id = user_key  # unpack
+            logging.info(f"User {user_id} - Data retention time exceeded for chat_id: {chat_id}. Cleaning up.")
+            cleanup_data(chat_id, user_id)
 
         time.sleep(150)  # Check every 5 minutes
+
 
 if __name__ == "__main__":
     try:
