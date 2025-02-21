@@ -15,7 +15,7 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Replace with your Telegram bot token
-BOT_TOKEN = "7766543633:AAFnN9tgGWFDyApzplak0tiJTafCxciFydo"
+BOT_TOKEN = "7766543633:AAHd5v0ILieeJdpnRTCdh2RvzV1M8jli4uc"
 bot = telebot.TeleBot(BOT_TOKEN)
 
 # Replace with your Telegram admin user ID. Use an integer.
