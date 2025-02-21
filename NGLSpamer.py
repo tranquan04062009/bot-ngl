@@ -15,13 +15,15 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Replace with your Telegram bot token
-BOT_TOKEN = "7766543633:AAHd5v0ILieeJdpnRTCdh2RvzV1M8jli4uc"
+BOT_TOKEN = "7766543633:AAFnN9tgGWFDyApzplak0tiJTafCxciFydo"
 bot = telebot.TeleBot(BOT_TOKEN)
 
 # Replace with your Telegram admin user ID. Use an integer.
 ADMIN_USER_ID = 6940071938  # Example: Replace with your actual admin ID
+ALLOWED_CHAT_IDS = [-1002370805497]  # Replace with a list of allowed group chat IDs.  Negative numbers are for groups/channels
+#ALLOWED_CHAT_IDS = [6940071938]  # Example: Single user id, remove comment to use
 
-USER_SHARE_LIMIT_PER_DAY = 10000
+USER_SHARE_LIMIT_PER_DAY = 5000
 user_share_counts = {}  # Keep track of shares per user per day
 DATA_RETENTION_TIME = 3600  # 1 hour in seconds (adjust as needed)
 
@@ -41,7 +43,7 @@ user_agents = [
 
 # Global stop flag for each chat
 stop_sharing_flags = {}
-successful_shares = 0  # Global variable to track successful shares
+successful_shares = {}  # Track successful shares per chat
 token_status = {}  # Track status of each token
 gome_token = []
 
@@ -205,30 +207,30 @@ def share(tach, id_share, chat_id):
         else:
             token_status[tach] = "die"  # Token is dead
             logging.warning(f"[!] Share thất bại: ID: {id_share} - Token Die - Phản hồi: {res}")
-            bot.send_message(chat_id, f"[!] Share thất bại: ID: {id_share} - Token Die - Dừng tool.")
+            #bot.send_message(chat_id, f"[!] Share thất bại: ID: {id_share} - Token Die - Dừng tool.") # No longer send message on each failure
             stop_sharing_flags[chat_id] = True
-
             return False
 
     except requests.exceptions.RequestException as e:
         token_status[tach] = "die"
         logging.error(f"[!] Lỗi request share: ID: {id_share} - {e}")
-        bot.send_message(chat_id, f"[!] Lỗi request share: ID: {id_share} - {e} - Dừng tool.")
+        #bot.send_message(chat_id, f"[!] Lỗi request share: ID: {id_share} - {e} - Dừng tool.") # No longer send message on each failure
         stop_sharing_flags[chat_id] = True
-
         return False
 
     except Exception as e:
         token_status[tach] = "die"
         logging.exception(f"[!] Lỗi không mong muốn khi share: ID: {id_share} - {e}")
-        bot.send_message(chat_id, f"[!] Lỗi không mong muốn khi share: ID: {id_share} - {e} - Dừng tool.")
+        #bot.send_message(chat_id, f"[!] Lỗi không mong muốn khi share: ID: {id_share} - {e} - Dừng tool.") # No longer send message on each failure
         stop_sharing_flags[chat_id] = True
         return False
 
-def share_thread_telegram(tach, id_share, stt, chat_id, message_id):
+def share_thread_telegram(tach, id_share, stt, chat_id, user_id): #Remove message_id as it is no longer used
     if stop_sharing_flags.get(chat_id, False):
         return False  # Stop sharing
     if share(tach, id_share, chat_id):
+        #Update successful share count
+        successful_shares[chat_id] = successful_shares.get(chat_id, 0) + 1 #Increase share count for that chat
         return True
     else:
         return False
@@ -238,13 +240,35 @@ share_data = {}  # Store user-specific data
 
 @bot.message_handler(commands=['start'])
 def start(message):
+    chat_id = message.chat.id
+    user_id = message.from_user.id
+
+    if chat_id not in ALLOWED_CHAT_IDS and message.chat.type != 'private':
+        bot.reply_to(message, "Xin lỗi, bot này chỉ hoạt động trong các nhóm được cho phép.")
+        return
+
+    if message.chat.type == 'private' and chat_id not in ALLOWED_CHAT_IDS:
+        bot.reply_to(message, "Xin lỗi, bot này không hỗ trợ chat riêng. Hãy sử dụng nó trong nhóm được cho phép.")
+        return
+
     bot.reply_to(message, "Chào mừng! Sử dụng /share để bắt đầu.")
 
 @bot.message_handler(commands=['share'])
 def share_command(message):
     chat_id = message.chat.id
     user_id = message.from_user.id
+
+    # Check if the bot is used outside allowed chat IDs
+    if chat_id not in ALLOWED_CHAT_IDS and message.chat.type != 'private':
+        bot.reply_to(message, "Xin lỗi, bot này chỉ hoạt động trong các nhóm được cho phép.")
+        return
+
+    if message.chat.type == 'private' and chat_id not in ALLOWED_CHAT_IDS:
+        bot.reply_to(message, "Xin lỗi, bot này không hỗ trợ chat riêng. Hãy sử dụng nó trong nhóm được cho phép.")
+        return
+
     share_data[chat_id] = {}  # Initialize data for the user
+    successful_shares[chat_id] = 0 #Initialize the share counter
 
     # Update data timestamp
     update_data_timestamp(chat_id)
@@ -356,11 +380,10 @@ def process_total_shares(message):
         bot.send_message(chat_id, f"Bạn không phải là admin. Số lượng share sẽ bị giới hạn ở mức {USER_SHARE_LIMIT_PER_DAY}.")
         share_data[chat_id]['total_share_limit'] = total_share_limit
 
-    start_sharing(chat_id)
+    start_sharing(chat_id, user_id) #Pass user_id to start_sharing
 
-def start_sharing(chat_id):
+def start_sharing(chat_id, user_id):
     data = share_data.get(chat_id)
-    user_id = bot.get_chat(chat_id).id  # Get user ID safely
 
     if not data:
         bot.send_message(chat_id, "Dữ liệu không đầy đủ. Vui lòng bắt đầu lại bằng lệnh /share.")
@@ -391,16 +414,12 @@ def start_sharing(chat_id):
     markup = types.InlineKeyboardMarkup()
     stop_button = types.InlineKeyboardButton("Dừng Share", callback_data="stop_share")
     markup.add(stop_button)
-    initial_message = bot.send_message(chat_id, f"Bắt đầu share...\nĐang xử lý: {0} share thành công", reply_markup=markup)
-    message_id = initial_message.message_id  # Store the message ID
-
-    share_data[chat_id]['message_id'] = message_id  # Store message_id in share_data
-    update_data_timestamp(chat_id)
+    bot.send_message(chat_id, "Bắt đầu share...", reply_markup=markup) #Simplified starting message.  Removed the counter update
 
     stt = 0
     shared_count = 0
-    global successful_shares
-    successful_shares = 0  # Reset successful shares count
+    #global successful_shares #No longer global. Use the one defined per chat_id
+    successful_shares[chat_id] = 0  # Reset successful shares count for this chat_id
     continue_sharing = True
     stop_sharing_flags[chat_id] = False  # Reset stop flag at start
 
@@ -421,7 +440,7 @@ def start_sharing(chat_id):
                 continue
 
             stt += 1
-            thread = threading.Thread(target=process_share, args=(tach, id_share, stt, chat_id, message_id, user_id))
+            thread = threading.Thread(target=process_share, args=(tach, id_share, stt, chat_id, user_id)) #Removed message_id
             thread.start()
             time.sleep(delay)
             shared_count += 1
@@ -441,7 +460,7 @@ def start_sharing(chat_id):
     bot.send_message(chat_id, "Quá trình share hoàn tất.")
     if total_share_limit > 0 and shared_count >= total_share_limit:
         bot.send_message(chat_id, f"Đạt giới hạn share là {total_share_limit} shares.")
-    bot.send_message(chat_id, f"Tổng cộng {successful_shares} share thành công.")  # Final count
+    bot.send_message(chat_id, f"@{message.from_user.username}, Tổng cộng {successful_shares[chat_id]} share thành công.")  # Final count message.  Use username instead of first_name + last_name
 
     cleanup_data(chat_id)
     global gome_token
@@ -457,19 +476,17 @@ def start_sharing(chat_id):
             logging.exception(f"Error closing session: {e}")
     token_sessions = {}  # Reset
 
-def process_share(tach, id_share, stt, chat_id, message_id, user_id):
-    global successful_shares
+def process_share(tach, id_share, stt, chat_id, user_id): #Removed message_id argument
+    #global successful_shares #No longer global, each chat_id has it's counter
     global user_share_counts  # access global variable
+
     if stop_sharing_flags.get(chat_id, False):
         return  # Stop immediately
 
-    success = share_thread_telegram(tach, id_share, stt, chat_id, message_id)
+    success = share_thread_telegram(tach, id_share, stt, chat_id, user_id) #Removed message_id argument
     if not success:
         # share() function handles stopping when share fails
         return
-
-    # If share was successful:
-    successful_shares += 1
 
     # Update daily share count
     today = strftime("%Y-%m-%d")
@@ -479,22 +496,14 @@ def process_share(tach, id_share, stt, chat_id, message_id, user_id):
         user_share_counts[user_id][today] = 0
     user_share_counts[user_id][today] += 1
 
-    # Edit the message to show the updated count
-    try:
-        markup = types.InlineKeyboardMarkup()
-        stop_button = types.InlineKeyboardButton("Dừng Share", callback_data="stop_share")
-        markup.add(stop_button)
-
-        bot.edit_message_text(chat_id=chat_id, message_id=message_id,
-                              text=f"Bắt đầu share...\nĐang xử lý: {successful_shares} share thành công", reply_markup=markup)  # Include stop button in edit
-    except Exception as e:
-        logging.exception(f"Error editing message: {e}")
+    #No longer updating the message. All updates will occur at the end.
+    #No need to remove markup
 
 def update_data_timestamp(chat_id):
     data_timestamps[chat_id] = time.time()
 
 def cleanup_data(chat_id):
-    global share_data, user_share_counts, request_timestamps, token_sessions
+    global share_data, user_share_counts, request_timestamps, token_sessions, successful_shares
 
     logging.info(f"Cleaning up data for chat_id: {chat_id}")
 
@@ -503,6 +512,9 @@ def cleanup_data(chat_id):
         del share_data[chat_id]
     if chat_id in stop_sharing_flags:
         del stop_sharing_flags[chat_id]
+    if chat_id in successful_shares:
+        del successful_shares[chat_id] #Delete successful share counter
+
     # Clean up token related data
     tokens_to_remove = [token for token in token_sessions if str(chat_id) in token] # VERY DANGEROUS. DO NOT DO THIS
     for token in tokens_to_remove:
@@ -533,7 +545,7 @@ def periodic_cleanup():
             logging.info(f"Data retention time exceeded for chat_id: {chat_id}. Cleaning up.")
             cleanup_data(chat_id)
 
-        time.sleep(300)  # Check every 5 minutes
+        time.sleep(150)  # Check every 5 minutes
 
 if __name__ == "__main__":
     try:
