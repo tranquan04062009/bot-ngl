@@ -70,6 +70,8 @@ report_sent = {}
 CANCEL_CALLBACK_DATA = "cancel_input"
 STOP_SHARE_CALLBACK_DATA = "stop_share"
 
+# Dictionary to store the initiator user ID per chat ID
+initiator_user_ids = {}
 
 def get_random_proxy():
     return random.choice(proxies)
@@ -333,7 +335,8 @@ def share_command(message):
     bot.send_message(chat_id, "Vui lòng gửi file chứa cookie (cookies.txt).", reply_markup=markup)
 
     # Store the user_id who started the /share command
-    share_data[user_key]['initiator_user_id'] = user_id
+    # Use the chat_id as the key
+    initiator_user_ids[chat_id] = user_id
 
     bot.register_next_step_handler(message, process_cookie_file)
 
@@ -345,7 +348,7 @@ def stop_share_callback(call):
     user_key = (chat_id, user_id)
 
     # Only allow the admin or the user who initiated the /share command to stop the sharing
-    if user_id == ADMIN_USER_ID or (user_key in share_data and share_data[user_key].get('initiator_user_id') == user_id):
+    if user_id == ADMIN_USER_ID or (chat_id in initiator_user_ids and initiator_user_ids[chat_id] == user_id):
         stop_sharing_flags[user_key] = True  # Set the stop flag
         bot.send_message(chat_id, "Đã nhận lệnh dừng share. Vui lòng chờ quá trình hoàn tất.")
         global gome_token
@@ -359,7 +362,7 @@ def stop_share_callback(call):
 
         cleanup_data(chat_id, user_id)  # Cleanup when stopped
     else:
-        bot.answer_callback_query(call.id, "Bạn không có quyền dừng quá trình này.")
+        bot.answer_callback_query(call.id, "Bạn không có quyền dừng quá trình này.", show_alert=True)
 
 
 @bot.callback_query_handler(func=lambda call: call.data == CANCEL_CALLBACK_DATA)
@@ -369,11 +372,14 @@ def cancel_input_callback(call):
     user_key = (chat_id, user_id)
 
     # Only allow the user who initiated the /share command to cancel the input process
-    if user_key in share_data and share_data[user_key].get('initiator_user_id') == user_id:
+    if chat_id in initiator_user_ids and initiator_user_ids[chat_id] == user_id:
         bot.send_message(chat_id, "Đã huỷ. Bạn có thể bắt đầu lại bằng lệnh /share.")
         cleanup_data(chat_id, user_id)
+        # Remove the initiator user ID for this chat
+        if chat_id in initiator_user_ids:
+            del initiator_user_ids[chat_id]
     else:
-        bot.answer_callback_query(call.id, "Bạn không có quyền huỷ quá trình này.")
+        bot.answer_callback_query(call.id, "Bạn không có quyền huỷ quá trình này.", show_alert=True)
 
 
 def process_cookie_file(message):
@@ -391,10 +397,13 @@ def process_cookie_file(message):
         if message.document is None:
             # Check for a "cancel" message
             if message.text and message.text.lower() == "cancel":
-                # Check the initiator
-                if user_key in share_data and share_data[user_key].get('initiator_user_id') == user_id:
+                 # Check the initiator
+                if chat_id in initiator_user_ids and initiator_user_ids[chat_id] == user_id:
                     bot.send_message(chat_id, "Đã huỷ. Bạn có thể bắt đầu lại bằng lệnh /share.")
                     cleanup_data(chat_id, user_id)
+                     # Remove the initiator user ID for this chat
+                    if chat_id in initiator_user_ids:
+                        del initiator_user_ids[chat_id]
                     return
                 else:
                     bot.send_message(chat_id, "Bạn không có quyền huỷ quá trình này.")
@@ -439,9 +448,12 @@ def process_id(message):
         if not id_share.isdigit():
             # Check for a "cancel" message
             if message.text and message.text.lower() == "cancel":
-                if user_key in share_data and share_data[user_key].get('initiator_user_id') == user_id:
+                if chat_id in initiator_user_ids and initiator_user_ids[chat_id] == user_id:
                     bot.send_message(chat_id, "Đã huỷ. Bạn có thể bắt đầu lại bằng lệnh /share.")
                     cleanup_data(chat_id, user_id)
+                    # Remove the initiator user ID for this chat
+                    if chat_id in initiator_user_ids:
+                        del initiator_user_ids[chat_id]
                     return
                 else:
                     bot.send_message(chat_id, "Bạn không có quyền huỷ quá trình này.")
@@ -482,9 +494,12 @@ def process_delay(message):
         except ValueError:
             # Check for a "cancel" message
             if message.text and message.text.lower() == "cancel":
-                 if user_key in share_data and share_data[user_key].get('initiator_user_id') == user_id:
+                 if chat_id in initiator_user_ids and initiator_user_ids[chat_id] == user_id:
                     bot.send_message(chat_id, "Đã huỷ. Bạn có thể bắt đầu lại bằng lệnh /share.")
                     cleanup_data(chat_id, user_id)
+                    # Remove the initiator user ID for this chat
+                    if chat_id in initiator_user_ids:
+                        del initiator_user_ids[chat_id]
                     return
                  else:
                     bot.send_message(chat_id, "Bạn không có quyền huỷ quá trình này.")
@@ -526,9 +541,12 @@ def process_total_shares(message):
         except ValueError:
             # Check for a "cancel" message
             if message.text and message.text.lower() == "cancel":
-                 if user_key in share_data and share_data[user_key].get('initiator_user_id') == user_id:
+                 if chat_id in initiator_user_ids and initiator_user_ids[chat_id] == user_id:
                     bot.send_message(chat_id, "Đã huỷ. Bạn có thể bắt đầu lại bằng lệnh /share.")
                     cleanup_data(chat_id, user_id)
+                     # Remove the initiator user ID for this chat
+                    if chat_id in initiator_user_ids:
+                        del initiator_user_ids[chat_id]
                     return
                  else:
                     bot.send_message(chat_id, "Bạn không có quyền huỷ quá trình này.")
@@ -609,7 +627,7 @@ def start_sharing(chat_id, user_id, username):
             today = strftime("%Y-%m-%d")
             if user_id != ADMIN_USER_ID and user_share_counts[user_id][today] >= USER_SHARE_LIMIT_PER_DAY:
                 bot.send_message(chat_id,
-                                 f"Bạn đã đạt giới hạn {USER_SHARE_LIMIT_PER_DAY} share hôm nay. Vui lòng thử lại vàongày mai.")
+                                 f"Bạn đã đạt giới hạn {USER_SHARE_LIMIT_PER_DAY} share hôm nay. Vui lòng thử lại vào ngày mai.")
                 continue_sharing = False
                 break
 
@@ -701,7 +719,7 @@ def update_data_timestamp(chat_id, user_id):
 
 def cleanup_data(chat_id, user_id):
     user_key = (chat_id, user_id)
-    global share_data, user_share_counts, request_timestamps, token_sessions, successful_shares, report_sent
+    global share_data, user_share_counts, request_timestamps, token_sessions, successful_shares, report_sent, initiator_user_ids
 
     logging.info(f"User {user_id} - Cleaning up data for chat_id: {chat_id}")
 
@@ -733,6 +751,10 @@ def cleanup_data(chat_id, user_id):
     # Remove timestamp
     if user_key in data_timestamps:
         del data_timestamps[user_key]
+
+     # Remove the initiator user ID for this chat
+    if chat_id in initiator_user_ids:
+        del initiator_user_ids[chat_id]
 
 
 def periodic_cleanup():
