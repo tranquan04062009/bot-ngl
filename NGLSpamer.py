@@ -11,6 +11,7 @@ import secrets
 from fake_useragent import UserAgent, FakeUserAgentError
 import telebot
 from telebot import types
+import threading
 
 # Replace 'YOUR_TELEGRAM_BOT_TOKEN' with your actual bot token
 BOT_TOKEN = '7766543633:AAHd5v0ILieeJdpnRTCdh2RvzV1M8jli4uc'
@@ -18,13 +19,13 @@ bot = telebot.TeleBot(BOT_TOKEN)
 
 logging.basicConfig(level=logging.ERROR, format='%(asctime)s - %(levelname)s - %(message)s')
 
-
 nglusername = None
 spam_message = None  # Changed 'message' to 'spam_message' to avoid conflict
 Count = None
 delay = None
 spamming = False
 chat_id = None
+message_id_to_edit = None  # Store the message ID for updating
 
 def tao_device_id():
     characters = string.ascii_lowercase + string.digits
@@ -102,11 +103,12 @@ def gui_ngl_tin_nhan(session, nglusername, message):  # No global here, 'message
         return False, f"Lỗi HTTP: {e}"
 
 def spam_ngl(chat_id):
-    global nglusername, spam_message, Count, delay, spamming
+    global nglusername, spam_message, Count, delay, spamming, message_id_to_edit
 
     session = tao_session_retry()
     value = 0
     notsend = 0
+    start_time = time.time()
 
     while value < Count and spamming:
         success, result = gui_ngl_tin_nhan(session, nglusername, spam_message)
@@ -114,17 +116,38 @@ def spam_ngl(chat_id):
         if success:
             notsend = 0
             value += 1
-            print(f"[+] Đã gửi => {value}")
-            bot.send_message(chat_id, f"[+] Đã gửi => {value}")
+            status_message = f"[+] Đã gửi => {value}/{Count}\n"
+            status_message += f"Lỗi: {notsend}\n"
+            status_message += f"Độ trễ: {delay}\n"
+            elapsed_time = time.time() - start_time
+            status_message += f"Thời gian đã trôi qua: {elapsed_time:.2f} giây"
+            print(status_message)
+
+            try:
+                 bot.edit_message_text(chat_id=chat_id, message_id=message_id_to_edit, text=status_message) # Cập nhật tin nhắn
+            except telebot.apihelper.ApiTelegramException as e:
+                logging.error(f"Lỗi khi chỉnh sửa tin nhắn: {e}")
 
         else:
             notsend += 1
-            print(f"[-] Chưa gửi được, {result}")
-            bot.send_message(chat_id, f"[-] Chưa gửi được, {result}")
+            status_message = f"[-] Chưa gửi được, {result}\n"
+            status_message += f"Lỗi: {notsend}\n"
+            status_message += f"Độ trễ: {delay}\n"
+            elapsed_time = time.time() - start_time
+            status_message += f"Thời gian đã trôi qua: {elapsed_time:.2f} giây"
+            print(status_message)
 
+            try:
+                bot.edit_message_text(chat_id=chat_id, message_id=message_id_to_edit, text=status_message) # Cập nhật tin nhắn
+            except telebot.apihelper.ApiTelegramException as e:
+                logging.error(f"Lỗi khi chỉnh sửa tin nhắn: {e}")
         if notsend == 4:
-            print("[!] Đang đổi thông tin...")
-            bot.send_message(chat_id, "[!] Đang đổi thông tin...")
+            status_message = "[!] Đang đổi thông tin..."
+            print(status_message)
+            try:
+                bot.edit_message_text(chat_id=chat_id, message_id=message_id_to_edit, text=status_message) # Cập nhật tin nhắn
+            except telebot.apihelper.ApiTelegramException as e:
+                logging.error(f"Lỗi khi chỉnh sửa tin nhắn: {e}")
             notsend = 0
 
         time.sleep(delay + random.uniform(0,0.5))
@@ -132,6 +155,7 @@ def spam_ngl(chat_id):
     if spamming:  # Only send completion message if spamming wasn't stopped manually
         bot.send_message(chat_id, "Hoàn thành spam!")
     spamming = False # Reset spamming flag after completion or interruption
+    message_id_to_edit = None # Reset the message ID
 
 
 # Telegram Bot Handlers
@@ -172,6 +196,10 @@ def get_delay(message):
     chat_id = message.chat.id
     try:
         delay = float(message.text)
+        if delay < 0:  # Prevent negative delays
+            bot.send_message(chat_id, "Lỗi: Độ trễ không hợp lệ. Vui lòng nhập một số dương.")
+            bot.register_next_step_handler(message, get_delay)
+            return
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
         itembtn1 = types.KeyboardButton('Bắt đầu spam')
         itembtn2 = types.KeyboardButton('Hủy bỏ')
@@ -184,17 +212,21 @@ def get_delay(message):
         bot.register_next_step_handler(message, get_delay)
 
 def confirm_spam(message):
-    global spamming, chat_id, nglusername, spam_message, Count, delay
+    global spamming, chat_id, nglusername, spam_message, Count, delay, message_id_to_edit
     chat_id = message.chat.id
     if message.text == 'Bắt đầu spam':
-        if not all([nglusername, spam_message, Count, delay]):
+        if not all([nglusername, spam_message, Count, delay is not None]): #Check delay is not None
             bot.send_message(chat_id, "Lỗi: Vui lòng sử dụng lệnh /ngl theo đúng cú pháp để cung cấp đủ thông tin.")
             spamming = False
             return
 
         spamming = True
-        bot.send_message(chat_id, "Bắt đầu spam...", reply_markup=types.ReplyKeyboardRemove())
-        spam_ngl(chat_id)
+        initial_message = bot.send_message(chat_id, "Bắt đầu spam...", reply_markup=types.ReplyKeyboardRemove())
+        message_id_to_edit = initial_message.message_id  # Get the message ID
+
+        spam_thread = threading.Thread(target=spam_ngl, args=(chat_id,))
+        spam_thread.start()
+
     else:
         spamming = False
         bot.send_message(chat_id, "Đã hủy bỏ.", reply_markup=types.ReplyKeyboardRemove())
