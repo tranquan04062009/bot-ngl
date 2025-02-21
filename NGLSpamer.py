@@ -285,7 +285,7 @@ def share_command(message):
         return
 
     # Display link and other information
-    bot.send_message(chat_id, "Thông tin bot:\n- Bot này được phát triển bởi [Your Name/Organization]\n- Hỗ trợ share bài viết lên trang cá nhân.\n- Liên hệ: [Your Contact Information/Link]")
+    bot.send_message(chat_id, "Thông tin bot:\n- Bot này được phát triển bởi [Trần Quân/SecPhiPhai]\n- Hỗ trợ share bài viết trang cá nhân.\n- Liên hệ: [0376841471] \n- [https://linktr.ee/tranquan46]")
 
     # Create a stop button
     markup = types.InlineKeyboardMarkup()
