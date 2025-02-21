@@ -7,9 +7,10 @@ import json
 import random
 from time import strftime
 import logging
+import asyncio  # Import asyncio at the top
 
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, JobQueue
 
 # Configure logging
 logging.basicConfig(
@@ -19,15 +20,15 @@ logging.basicConfig(
 
 # --- CONFIGURATION ---
 ADMIN_ID = 6940071938  # Replace with the admin's Telegram ID (int)
-BOT_TOKEN = "7766543633:AAHd5v0ILieeJdpnRTCdh2RvzV1M8jli4uc" # Replace with your bot's token
-GROUP_CHAT_ID = -1002370805497 # Replace with your group chat ID (int).  Negative for groups.
+BOT_TOKEN = "7766543633:AAHd5v0ILieeJdpnRTCdh2RvzV1M8jli4uc"  # Replace with your bot's token
+GROUP_CHAT_ID = -1002370805497  # Replace with your group chat ID (int).  Negative for groups.
 DAILY_SHARE_LIMIT = 5000
 # --- END CONFIGURATION ---
 
-user_states = {} # Dictionary to track user's progress through the sharing process.  Keys: user_id, Values: State (e.g., "waiting_for_cookie_file", "waiting_for_id", etc.)
-user_data = {} # Stores the data the user enters. Keys: user_id, Values: Dict containing cookie_file_path, id_share, delay, target_share_count, successful_shares
+user_states = {}  # Dictionary to track user's progress through the sharing process.  Keys: user_id, Values: State (e.g., "waiting_for_cookie_file", "waiting_for_id", etc.)
+user_data = {}  # Stores the data the user enters. Keys: user_id, Values: Dict containing cookie_file_path, id_share, delay, target_share_count, successful_shares
 daily_share_count = 0
-share_count_lock = threading.Lock() # Protects the daily_share_count variable
+share_count_lock = threading.Lock()  # Protects the daily_share_count variable
 active_share_threads = {}  # Tracks active share threads per user: {user_id: thread}
 continue_sharing_flags = {}  # Tracks whether a user wants to continue sharing: {user_id: bool}
 
@@ -45,6 +46,7 @@ user_agents = [
 ]
 
 gome_token = []
+
 
 def get_token(input_file):
     global gome_token
@@ -71,7 +73,8 @@ def get_token(input_file):
             'user-agent': random.choice(user_agents)
         }
         try:
-            home_business = requests.get('https://business.facebook.com/content_management', headers=header_, timeout=15).text
+            home_business = requests.get('https://business.facebook.com/content_management', headers=header_,
+                                           timeout=15).text
             if 'EAAG' in home_business:
                 token = home_business.split('EAAG')[1].split('","')[0]
                 cookie_token = f'{cookie}|EAAG{token}'
@@ -83,6 +86,7 @@ def get_token(input_file):
         except Exception as e:
             logging.exception(f"Lỗi không mong muốn khi lấy token cho cookie: {cookie[:50]}... {e}")
     return gome_token
+
 
 async def share(tach, id_share, context: ContextTypes.DEFAULT_TYPE, user_id, successful_shares):
     cookie = tach.split('|')[0]
@@ -98,59 +102,68 @@ async def share(tach, id_share, context: ContextTypes.DEFAULT_TYPE, user_id, suc
         'referer': f'https://m.facebook.com/{id_share}'
     }
     try:
-        res = requests.post(f'https://graph.facebook.com/me/feed?link=https://m.facebook.com/{id_share}&published=0&access_token={token}', headers=he, timeout=10).json()
+        res = requests.post(
+            f'https://graph.facebook.com/me/feed?link=https://m.facebook.com/{id_share}&published=0&access_token={token}',
+            headers=he, timeout=10).json()
         if 'id' in res:
             return True
         else:
             logging.warning(f"Share thất bại: ID: {id_share} - Phản hồi: {res}")
-            #No longer send error messages per share. Only on completion or failure
-            #await context.bot.send_message(chat_id=user_id, text=f"Share failed for ID {id_share}. Response: {res}")
+            # No longer send error messages per share. Only on completion or failure
+            # await context.bot.send_message(chat_id=user_id, text=f"Share failed for ID {id_share}. Response: {res}")
             return False
     except requests.exceptions.RequestException as e:
         logging.error(f"Lỗi request share: ID: {id_share} - {e}")
-        #No longer send error messages per share. Only on completion or failure
-        #await context.bot.send_message(chat_id=user_id, text=f"Request error during share for ID {id_share}: {e}")
+        # No longer send error messages per share. Only on completion or failure
+        # await context.bot.send_message(chat_id=user_id, text=f"Request error during share for ID {id_share}: {e}")
         return False
     except Exception as e:
         logging.exception(f"Lỗi không mong muốn khi share: ID: {id_share} - {e}")
-        #No longer send error messages per share. Only on completion or failure
-        #await context.bot.send_message(chat_id=user_id, text=f"Unexpected error during share for ID {id_share}: {e}")
+        # No longer send error messages per share. Only on completion or failure
+        # await context.bot.send_message(chat_id=user_id, text=f"Unexpected error during share for ID {id_share}: {e}")
         return False
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
-    if update.message.chat_id != GROUP_CHAT_ID:
-        await context.bot.send_message(chat_id=user_id, text="Xin lỗi, bot này chỉ hoạt động trong nhóm chat đã được chỉ định.")
+    chat_id = update.message.chat_id
+
+    if chat_id != GROUP_CHAT_ID:
+        await context.bot.send_message(chat_id=chat_id, text="Xin lỗi, bot này chỉ hoạt động trong nhóm chat đã được chỉ định.")
         return
-    await context.bot.send_message(chat_id=user_id, text="Chào mừng! Sử dụng lệnh /share để bắt đầu.")
+    await context.bot.send_message(chat_id=chat_id, text="Chào mừng! Sử dụng lệnh /share để bắt đầu.")
 
 
 async def share_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
+    chat_id = update.message.chat_id
 
-    if update.message.chat_id != GROUP_CHAT_ID:
-        await context.bot.send_message(chat_id=user_id, text="Xin lỗi, bot này chỉ hoạt động trong nhóm chat đã được chỉ định.")
+    if chat_id != GROUP_CHAT_ID:
+        await context.bot.send_message(chat_id=chat_id, text="Xin lỗi, bot này chỉ hoạt động trong nhóm chat đã được chỉ định.")
         return
 
     if user_id in active_share_threads:
-      await context.bot.send_message(chat_id=user_id, text="Bạn đang chạy một tiến trình share khác. Vui lòng dừng tiến trình hiện tại trước.")
-      return
-
+        await context.bot.send_message(chat_id=chat_id,
+                                       text="Bạn đang chạy một tiến trình share khác. Vui lòng dừng tiến trình hiện tại trước.")
+        return
 
     # Create "Cancel" button.
     cancel_keyboard = ReplyKeyboardMarkup([[KeyboardButton("Cancel")]], resize_keyboard=True, one_time_keyboard=True)
 
     user_states[user_id] = "waiting_for_cookie_file"
     user_data[user_id] = {}
-    user_data[user_id]['successful_shares'] = 0  #Initialize the number of successful share
+    user_data[user_id]['successful_shares'] = 0  # Initialize the number of successful share
 
-    await context.bot.send_message(chat_id=user_id, text="Vui lòng gửi file chứa Cookies (cookies.txt).", reply_markup=cancel_keyboard)
+    await context.bot.send_message(chat_id=chat_id, text="Vui lòng gửi file chứa Cookies (cookies.txt).",
+                                   reply_markup=cancel_keyboard)
 
 
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
-    if update.message.chat_id != GROUP_CHAT_ID:
-        await context.bot.send_message(chat_id=user_id, text="Xin lỗi, bot này chỉ hoạt động trong nhóm chat đã được chỉ định.")
+    chat_id = update.message.chat_id
+
+    if chat_id != GROUP_CHAT_ID:
+        await context.bot.send_message(chat_id=chat_id, text="Xin lỗi, bot này chỉ hoạt động trong nhóm chat đã được chỉ định.")
         return
 
     if user_id in user_states and user_states[user_id] == "waiting_for_cookie_file":
@@ -165,34 +178,40 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_data[user_id]['input_file'] = input_file
             user_states[user_id] = "waiting_for_id"
 
-            cancel_keyboard = ReplyKeyboardMarkup([[KeyboardButton("Cancel")]], resize_keyboard=True, one_time_keyboard=True)
+            cancel_keyboard = ReplyKeyboardMarkup([[KeyboardButton("Cancel")]], resize_keyboard=True,
+                                                  one_time_keyboard=True)
 
-            await context.bot.send_message(chat_id=user_id, text="Tuyệt vời! Bây giờ, hãy nhập ID cần Share.", reply_markup=cancel_keyboard)
+            await context.bot.send_message(chat_id=chat_id, text="Tuyệt vời! Bây giờ, hãy nhập ID cần Share.",
+                                           reply_markup=cancel_keyboard)
         except Exception as e:
             logging.exception(f"Error handling file: {e}")
-            await context.bot.send_message(chat_id=user_id, text=f"Có lỗi xảy ra khi xử lý file. Vui lòng thử lại. Error: {e}")
+            await context.bot.send_message(chat_id=chat_id, text=f"Có lỗi xảy ra khi xử lý file. Vui lòng thử lại. Error: {e}")
             cleanup_user_data(user_id)
 
 
 async def handle_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
-    if update.message.chat_id != GROUP_CHAT_ID:
-        await context.bot.send_message(chat_id=user_id, text="Xin lỗi, bot này chỉ hoạt động trong nhóm chat đã được chỉ định.")
+    chat_id = update.message.chat_id
+    if chat_id != GROUP_CHAT_ID:
+        await context.bot.send_message(chat_id=chat_id, text="Xin lỗi, bot này chỉ hoạt động trong nhóm chat đã được chỉ định.")
         return
     if user_id in user_states and user_states[user_id] == "waiting_for_id":
         id_share = update.message.text
         user_data[user_id]['id_share'] = id_share
         user_states[user_id] = "waiting_for_target_count"
 
-        cancel_keyboard = ReplyKeyboardMarkup([[KeyboardButton("Cancel")]], resize_keyboard=True, one_time_keyboard=True)
+        cancel_keyboard = ReplyKeyboardMarkup([[KeyboardButton("Cancel")]], resize_keyboard=True,
+                                                  one_time_keyboard=True)
 
-        await context.bot.send_message(chat_id=user_id, text="OK. Nhập số lượng share bạn muốn.", reply_markup=cancel_keyboard)
+        await context.bot.send_message(chat_id=chat_id, text="OK. Nhập số lượng share bạn muốn.",
+                                           reply_markup=cancel_keyboard)
 
 
 async def handle_target_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
-    if update.message.chat_id != GROUP_CHAT_ID:
-        await context.bot.send_message(chat_id=user_id, text="Xin lỗi, bot này chỉ hoạt động trong nhóm chat đã được chỉ định.")
+    chat_id = update.message.chat_id
+    if chat_id != GROUP_CHAT_ID:
+        await context.bot.send_message(chat_id=chat_id, text="Xin lỗi, bot này chỉ hoạt động trong nhóm chat đã được chỉ định.")
         return
     if user_id in user_states and user_states[user_id] == "waiting_for_target_count":
         try:
@@ -200,22 +219,25 @@ async def handle_target_count(update: Update, context: ContextTypes.DEFAULT_TYPE
             user_data[user_id]['target_share_count'] = target_share_count
             user_states[user_id] = "waiting_for_delay"
 
-            cancel_keyboard = ReplyKeyboardMarkup([[KeyboardButton("Cancel")]], resize_keyboard=True, one_time_keyboard=True)
+            cancel_keyboard = ReplyKeyboardMarkup([[KeyboardButton("Cancel")]], resize_keyboard=True,
+                                                  one_time_keyboard=True)
 
-            await context.bot.send_message(chat_id=user_id, text="Tuyệt vời! Nhập Delay giữa các lần share (giây, ví dụ: 10).", reply_markup=cancel_keyboard)
+            await context.bot.send_message(chat_id=chat_id, text="Tuyệt vời! Nhập Delay giữa các lần share (giây, ví dụ: 10).",
+                                           reply_markup=cancel_keyboard)
         except ValueError:
-            await context.bot.send_message(chat_id=user_id, text="Số lượng share phải là một số nguyên hợp lệ. Vui lòng thử lại.")
+            await context.bot.send_message(chat_id=chat_id, text="Số lượng share phải là một số nguyên hợp lệ. Vui lòng thử lại.")
             user_states[user_id] = "waiting_for_target_count"
         except Exception as e:
             logging.exception(f"Error in handle_target_count: {e}")
-            await context.bot.send_message(chat_id=user_id, text=f"Đã có lỗi xảy ra. Vui lòng thử lại lệnh /share.")
+            await context.bot.send_message(chat_id=chat_id, text=f"Đã có lỗi xảy ra. Vui lòng thử lại lệnh /share.")
             cleanup_user_data(user_id)
 
 
 async def handle_delay(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
-    if update.message.chat_id != GROUP_CHAT_ID:
-        await context.bot.send_message(chat_id=user_id, text="Xin lỗi, bot này chỉ hoạt động trong nhóm chat đã được chỉ định.")
+    chat_id = update.message.chat_id
+    if chat_id != GROUP_CHAT_ID:
+        await context.bot.send_message(chat_id=chat_id, text="Xin lỗi, bot này chỉ hoạt động trong nhóm chat đã được chỉ định.")
         return
     if user_id in user_states and user_states[user_id] == "waiting_for_delay":
         try:
@@ -224,42 +246,46 @@ async def handle_delay(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_states[user_id] = "ready_to_share"
 
             # Remove "Cancel" button and display "Stop Sharing"
-            reply_markup = ReplyKeyboardMarkup([[KeyboardButton("Stop Sharing")]], resize_keyboard=True, one_time_keyboard=True)
+            reply_markup = ReplyKeyboardMarkup([[KeyboardButton("Stop Sharing")]], resize_keyboard=True,
+                                               one_time_keyboard=True)
 
-            await context.bot.send_message(chat_id=user_id, text="Tuyệt vời! Tất cả thông tin đã được thu thập.  Bắt đầu share...", reply_markup=reply_markup)
+            await context.bot.send_message(chat_id=chat_id, text="Tuyệt vời! Tất cả thông tin đã được thu thập.  Bắt đầu share...",
+                                           reply_markup=reply_markup)
             await start_sharing(update, context)
 
         except ValueError:
-            await context.bot.send_message(chat_id=user_id, text="Delay phải là một số nguyên hợp lệ. Vui lòng thử lại.")
+            await context.bot.send_message(chat_id=chat_id, text="Delay phải là một số nguyên hợp lệ. Vui lòng thử lại.")
             user_states[user_id] = "waiting_for_delay"  # Go back to waiting for the delay
         except Exception as e:
             logging.exception(f"Error in handle_delay: {e}")
-            await context.bot.send_message(chat_id=user_id, text=f"Đã có lỗi xảy ra. Vui lòng thử lại lệnh /share.")
+            await context.bot.send_message(chat_id=chat_id, text=f"Đã có lỗi xảy ra. Vui lòng thử lại lệnh /share.")
             cleanup_user_data(user_id)
+
 
 async def start_sharing(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
-    username = update.message.from_user.username #Get the username, for tagging in the final message
+    chat_id = update.message.chat_id
+    username = update.message.from_user.username  # Get the username, for tagging in the final message
 
     if user_id not in user_states or user_states[user_id] != "ready_to_share":
-        await context.bot.send_message(chat_id=user_id, text="Không thể bắt đầu share. Vui lòng chạy lại lệnh /share.")
+        await context.bot.send_message(chat_id=chat_id, text="Không thể bắt đầu share. Vui lòng chạy lại lệnh /share.")
         return
 
     input_file = user_data[user_id]['input_file']
     id_share = user_data[user_id]['id_share']
     delay = user_data[user_id]['delay']
     target_share_count = user_data[user_id]['target_share_count']
-    successful_shares = 0 # Reset the successful shares count for this run.
+    successful_shares = 0  # Reset the successful shares count for this run.
 
     all_tokens = get_token(input_file)
     total_live = len(all_tokens)
 
     if total_live == 0:
-        await context.bot.send_message(chat_id=user_id, text="Không tìm thấy token hợp lệ nào.  Dừng lại.")
+        await context.bot.send_message(chat_id=chat_id, text="Không tìm thấy token hợp lệ nào.  Dừng lại.")
         cleanup_user_data(user_id)
         return
 
-    await context.bot.send_message(chat_id=user_id, text=f"Đã tìm thấy {total_live} token hợp lệ.")
+    await context.bot.send_message(chat_id=chat_id, text=f"Đã tìm thấy {total_live} token hợp lệ.")
 
     stt = 0
     shared_count = 0
@@ -290,7 +316,8 @@ async def start_sharing(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not continue_sharing_flags.get(user_id, False):
                 break  # Double-check before starting the share
 
-            success = asyncio.run(share(tach, id_share, context, user_id, successful_shares)) #Pass the successful shares to the share function
+            success = asyncio.run(share(tach, id_share, context, user_id,
+                                        successful_shares))  # Pass the successful shares to the share function
 
             if success:
                 with share_count_lock:
@@ -302,15 +329,14 @@ async def start_sharing(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Send final message.
         if successful_shares == target_share_count:
-          message = f"@{username} Đã share thành công {successful_shares}/{target_share_count}."
+            message = f"@{username} Đã share thành công {successful_shares}/{target_share_count}."
         else:
-          message = f"@{username} Đã dừng share. Đã share thành công {successful_shares}/{target_share_count}."
+            message = f"@{username} Đã dừng share. Đã share thành công {successful_shares}/{target_share_count}."
 
         asyncio.run(context.bot.send_message(chat_id=user_id, text=message))
 
         cleanup_user_data(user_id)
         del active_share_threads[user_id]
-
 
     share_thread = threading.Thread(target=share_thread_target)
     active_share_threads[user_id] = share_thread
@@ -318,29 +344,37 @@ async def start_sharing(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-  user_id = update.message.from_user.id
-  if update.message.chat_id != GROUP_CHAT_ID:
-        await context.bot.send_message(chat_id=user_id, text="Xin lỗi, bot này chỉ hoạt động trong nhóm chat đã được chỉ định.")
+    user_id = update.message.from_user.id
+    chat_id = update.message.chat_id
+    if chat_id != GROUP_CHAT_ID:
+        await context.bot.send_message(chat_id=chat_id, text="Xin lỗi, bot này chỉ hoạt động trong nhóm chat đã được chỉ định.")
         return
 
-  if user_id in user_states:
-      cleanup_user_data(user_id)
-      await context.bot.send_message(chat_id=user_id, text="Tiến trình đã bị huỷ.", reply_markup = ReplyKeyboardMarkup([[]], resize_keyboard=True, one_time_keyboard=True)) # Remove keyboard
-  else:
-      await context.bot.send_message(chat_id=user_id, text="Không có tiến trình nào đang chạy để hủy.")
+    if user_id in user_states:
+        cleanup_user_data(user_id)
+        await context.bot.send_message(chat_id=chat_id, text="Tiến trình đã bị huỷ.",
+                                       reply_markup=ReplyKeyboardMarkup([[]], resize_keyboard=True,
+                                                                       one_time_keyboard=True))  # Remove keyboard
+    else:
+        await context.bot.send_message(chat_id=chat_id, text="Không có tiến trình nào đang chạy để hủy.")
 
 
 async def handle_stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
-    if update.message.chat_id != GROUP_CHAT_ID:
-        await context.bot.send_message(chat_id=user_id, text="Xin lỗi, bot này chỉ hoạt động trong nhóm chat đã được chỉ định.")
+    chat_id = update.message.chat_id
+
+    if chat_id != GROUP_CHAT_ID:
+        await context.bot.send_message(chat_id=chat_id, text="Xin lỗi, bot này chỉ hoạt động trong nhóm chat đã được chỉ định.")
         return
 
     if user_id in active_share_threads:
         continue_sharing_flags[user_id] = False  # Set the flag to stop the thread
-        await context.bot.send_message(chat_id=user_id, text="Dừng chia sẻ...", reply_markup = ReplyKeyboardMarkup([[]], resize_keyboard=True, one_time_keyboard=True)) #Remove Keyboard
+        await context.bot.send_message(chat_id=chat_id, text="Dừng chia sẻ...",
+                                       reply_markup=ReplyKeyboardMarkup([[]], resize_keyboard=True,
+                                                                       one_time_keyboard=True))  # Remove Keyboard
     else:
-        await context.bot.send_message(chat_id=user_id, text="Không có tiến trình share nào đang chạy để dừng.")
+        await context.bot.send_message(chat_id=chat_id, text="Không có tiến trình share nào đang chạy để dừng.")
+
 
 def cleanup_user_data(user_id):
     """Cleans up user-specific data after sharing is complete or cancelled."""
@@ -353,6 +387,7 @@ def cleanup_user_data(user_id):
     if user_id in active_share_threads:
         del active_share_threads[user_id]
 
+
 async def reset_daily_limit(context: ContextTypes.DEFAULT_TYPE):
     global daily_share_count
     global share_count_lock
@@ -362,14 +397,17 @@ async def reset_daily_limit(context: ContextTypes.DEFAULT_TYPE):
 
 
 async def unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await context.bot.send_message(chat_id=update.effective_chat.id, text="Xin lỗi, lệnh này không hợp lệ.")
+    chat_id = update.effective_chat.id
+    await context.bot.send_message(chat_id=chat_id, text="Xin lỗi, lệnh này không hợp lệ.")
 
 
 if __name__ == '__main__':
-    import asyncio  # Import asyncio here
     import datetime
 
     application = ApplicationBuilder().token(BOT_TOKEN).build()
+
+    # Get the job queue
+    job_queue: JobQueue = application.job_queue
 
     # Command handlers
     start_handler = CommandHandler('start', start)
@@ -377,18 +415,17 @@ if __name__ == '__main__':
     application.add_handler(start_handler)
     application.add_handler(share_handler)
 
-
-    #Message Handlers
+    # Message Handlers
     file_handler = MessageHandler(filters.Document.ALL, handle_file)
     id_handler = MessageHandler(filters.TEXT & ~filters.COMMAND, handle_id)
-    target_count_handler = MessageHandler(filters.TEXT & ~filters.COMMAND, handle_target_count) #Added handler
+    target_count_handler = MessageHandler(filters.TEXT & ~filters.COMMAND, handle_target_count)  # Added handler
     delay_handler = MessageHandler(filters.TEXT & ~filters.COMMAND, handle_delay)
     cancel_handler = MessageHandler(filters.TEXT & filters.Regex(pattern="^Cancel$"), handle_cancel)
     stop_handler = MessageHandler(filters.TEXT & filters.Regex(pattern="^Stop Sharing$"), handle_stop)
 
     application.add_handler(file_handler)
     application.add_handler(id_handler)
-    application.add_handler(target_count_handler) # Added handler
+    application.add_handler(target_count_handler)  # Added handler
     application.add_handler(delay_handler)
     application.add_handler(cancel_handler)
     application.add_handler(stop_handler)
@@ -397,9 +434,7 @@ if __name__ == '__main__':
     unknown_handler = MessageHandler(filters.COMMAND, unknown)
     application.add_handler(unknown_handler)
 
-
     # Job to reset the daily limit (Run at midnight)
-    job_queue = application.job_queue
-    job_daily_reset = job_queue.run_daily(reset_daily_limit, time=datetime.time(0, 0)) #Midnight
+    job_daily_reset = job_queue.run_daily(reset_daily_limit, time=datetime.time(0, 0))  # Midnight
 
     application.run_polling()
