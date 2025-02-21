@@ -139,7 +139,7 @@ def send_welcome(message):
         return
 
     help_text = """
-Bot này giúp bạn chia sẻ bài viết Facebook.
+Bot này giúp bạn buff chia sẻ bài viết Facebook.
 
 **Lệnh:**
 /share - Bắt đầu quá trình chia sẻ.
