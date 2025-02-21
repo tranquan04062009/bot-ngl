@@ -20,7 +20,7 @@ logging.basicConfig(level=logging.ERROR, format='%(asctime)s - %(levelname)s - %
 
 
 nglusername = None
-message = None
+spam_message = None  # Changed 'message' to 'spam_message' to avoid conflict
 Count = None
 delay = None
 spamming = False
@@ -79,8 +79,7 @@ def random_headers():
     }
 
 
-def gui_ngl_tin_nhan(session, nglusername, message):
-
+def gui_ngl_tin_nhan(session, nglusername, message):  # No global here, 'message' is fine as a parameter
     data = {
         'username': f'{nglusername}',
         'question': f'{message}',
@@ -103,14 +102,14 @@ def gui_ngl_tin_nhan(session, nglusername, message):
         return False, f"Lỗi HTTP: {e}"
 
 def spam_ngl(chat_id):
-    global nglusername, message, Count, delay, spamming
+    global nglusername, spam_message, Count, delay, spamming
 
     session = tao_session_retry()
     value = 0
     notsend = 0
 
     while value < Count and spamming:
-        success, result = gui_ngl_tin_nhan(session, nglusername, message)
+        success, result = gui_ngl_tin_nhan(session, nglusername, spam_message)
 
         if success:
             notsend = 0
@@ -122,7 +121,7 @@ def spam_ngl(chat_id):
             notsend += 1
             print(f"[-] Chưa gửi được, {result}")
             bot.send_message(chat_id, f"[-] Chưa gửi được, {result}")
-        
+
         if notsend == 4:
             print("[!] Đang đổi thông tin...")
             bot.send_message(chat_id, "[!] Đang đổi thông tin...")
@@ -151,14 +150,14 @@ def get_username(message):
     bot.register_next_step_handler(message, get_message)
 
 def get_message(message):
-    global nglusername, message, chat_id
+    global nglusername, spam_message, chat_id
     chat_id = message.chat.id
-    message = message.text
+    spam_message = message.text
     bot.send_message(chat_id, "Nhập số lượng tin nhắn:")
     bot.register_next_step_handler(message, get_count)
 
 def get_count(message):
-    global nglusername, message, Count, chat_id
+    global nglusername, spam_message, Count, chat_id
     chat_id = message.chat.id
     try:
         Count = int(message.text)
@@ -169,7 +168,7 @@ def get_count(message):
         bot.register_next_step_handler(message, get_count)
 
 def get_delay(message):
-    global nglusername, message, Count, delay, chat_id
+    global nglusername, spam_message, Count, delay, chat_id
     chat_id = message.chat.id
     try:
         delay = float(message.text)
@@ -185,10 +184,10 @@ def get_delay(message):
         bot.register_next_step_handler(message, get_delay)
 
 def confirm_spam(message):
-    global spamming, chat_id
+    global spamming, chat_id, nglusername, spam_message, Count, delay
     chat_id = message.chat.id
     if message.text == 'Bắt đầu spam':
-        if not all([nglusername, message, Count, delay]):
+        if not all([nglusername, spam_message, Count, delay]):
             bot.send_message(chat_id, "Lỗi: Vui lòng sử dụng lệnh /ngl theo đúng cú pháp để cung cấp đủ thông tin.")
             spamming = False
             return
