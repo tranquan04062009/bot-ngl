@@ -70,11 +70,17 @@ report_sent = {}
 CANCEL_CALLBACK_DATA = "cancel_input"
 STOP_SHARE_CALLBACK_DATA = "stop_share"
 
-# Dictionary to store the initiator user ID per chat ID
+# Dictionary to store the initiator user ID per user_key
 initiator_user_ids = {}
 
 # Dictionary to store message IDs for inline keyboards.
 keyboard_message_ids = {}
+
+# Dictionary to track if a /share command is in progress for a user in a chat
+share_in_progress = {}
+
+# Dictionary to store next step handlers for each user_key
+next_step_handlers = {}
 
 
 def get_random_proxy():
@@ -308,6 +314,13 @@ def share_command(message):
         bot.reply_to(message, "Xin lỗi, bot này không hỗ trợ chat riêng. Hãy sử dụng nó trong nhóm được cho phép.")
         return
 
+    # Check if a /share command is already in progress for this user in this chat
+    if share_in_progress.get(user_key, False):
+        bot.reply_to(message,
+                     "Bạn đang chạy một tiến trình share. Vui lòng hoàn tất hoặc dừng tiến trình hiện tại trước khi bắt đầu một tiến trình mới.")
+        return
+
+    share_in_progress[user_key] = True  # Mark that a /share command is now in progress
     share_data[user_key] = {}  # Initialize data for the user
     successful_shares[user_key] = 0  # Initialize the share counter
     report_sent[user_key] = False  # Initialize report_sent flag
@@ -325,6 +338,7 @@ def share_command(message):
     if user_id != ADMIN_USER_ID and user_share_counts[user_id][today] >= USER_SHARE_LIMIT_PER_DAY:
         bot.send_message(chat_id,
                          f"Bạn đã đạt giới hạn {USER_SHARE_LIMIT_PER_DAY} share hôm nay. Vui lòng thử lại vào ngày mai.")
+        share_in_progress[user_key] = False  # Reset the flag
         return
 
     # Display link and other information
@@ -342,10 +356,31 @@ def share_command(message):
     keyboard_message_ids[user_key] = message_obj.message_id
 
     # Store the user_id who started the /share command
-    # Use the chat_id as the key
-    initiator_user_ids[chat_id] = user_id
+    initiator_user_ids[user_key] = user_id  # Using user_key for more reliable tracking
 
-    bot.register_next_step_handler(message, process_cookie_file)
+    # Register the next step handler for this user_key
+    register_next_step_handler(message, process_cookie_file)
+
+
+def register_next_step_handler(message, callback, *args, **kwargs):
+    chat_id = message.chat.id
+    user_id = message.from_user.id
+    user_key = (chat_id, user_id)
+
+    next_step_handlers[user_key] = (callback, args, kwargs)
+
+    # Override telebot's default next_step_handler to handle the message only if it comes from the right user
+    @bot.message_handler(func=lambda msg: msg.chat.id == chat_id and msg.from_user.id == user_id)
+    def wrapped_handler(msg):
+        if user_key in next_step_handlers:
+            callback, args, kwargs = next_step_handlers.pop(user_key)
+            try:
+                callback(msg, *args, **kwargs)
+            except Exception as e:
+                logging.exception(f"User {user_id} - Error in next step handler: {e}")
+                bot.reply_to(msg, "Đã xảy ra lỗi. Vui lòng thử lại sau.")
+
+    return wrapped_handler
 
 
 @bot.callback_query_handler(func=lambda call: call.data == STOP_SHARE_CALLBACK_DATA)
@@ -354,8 +389,8 @@ def stop_share_callback(call):
     user_id = call.from_user.id
     user_key = (chat_id, user_id)
 
-    # Only allow the admin or the user who initiated the /share command to stop the sharing
-    if user_id == ADMIN_USER_ID or (chat_id in initiator_user_ids and initiator_user_ids[chat_id] == user_id):
+    # Check if the user who pressed the button is the same user who initiated the /share command.
+    if user_key in initiator_user_ids and initiator_user_ids[user_key] == user_id:
         stop_sharing_flags[user_key] = True  # Set the stop flag
         bot.send_message(chat_id, "Đã nhận lệnh dừng share. Vui lòng chờ quá trình hoàn tất.")
         global gome_token
@@ -368,7 +403,8 @@ def stop_share_callback(call):
         token_sessions = {}  # reset
 
         cleanup_data(chat_id, user_id)  # Cleanup when stopped
-        remove_inline_keyboard(chat_id, user_id) # Remove the inline keyboard
+        remove_inline_keyboard(chat_id, user_id)  # Remove the inline keyboard
+        share_in_progress[user_key] = False  # Reset the flag
     else:
         bot.answer_callback_query(call.id, "Bạn không có quyền dừng quá trình này.", show_alert=True)
 
@@ -380,16 +416,17 @@ def cancel_input_callback(call):
     user_key = (chat_id, user_id)
 
     # Check if the user who pressed the button is the same user who initiated the /share command.
-    if chat_id in initiator_user_ids and initiator_user_ids[chat_id] == user_id:
+    if user_key in initiator_user_ids and initiator_user_ids[user_key] == user_id:
         bot.send_message(chat_id, "Đã huỷ. Bạn có thể bắt đầu lại bằng lệnh /share.")
         cleanup_data(chat_id, user_id)
 
         # Remove the inline keyboard
         remove_inline_keyboard(chat_id, user_id)
 
-        # Remove the initiator user ID for this chat
-        if chat_id in initiator_user_ids:
-            del initiator_user_ids[chat_id]
+        # Remove the initiator user ID
+        del initiator_user_ids[user_key]
+
+        share_in_progress[user_key] = False  # Reset the flag
     else:
         bot.answer_callback_query(call.id, "Bạn không có quyền huỷ quá trình này.", show_alert=True)
 
@@ -399,23 +436,27 @@ def process_cookie_file(message):
     user_id = message.from_user.id
     user_key = (chat_id, user_id)
 
+    # Double-check that this message is from the right user and the process is in progress
+    if user_key not in initiator_user_ids or initiator_user_ids[user_key] != user_id or not share_in_progress.get(user_key, False):
+        return  # Ignore the message if it's from someone else or no process is running
+
     # Check if the user sent a callback query (from the inline keyboard) instead of a file.
     if message.content_type == 'text' and message.text == "/share":
         # User restarted the process. Clean up the data.
         cleanup_data(chat_id, user_id)
+        share_in_progress[user_key] = False  # Reset the flag
         return  # stop processing this request
 
     try:
         if message.document is None:
             # Check for a "cancel" message
             if message.text and message.text.lower() == "cancel":
-                # Check the initiator
-                if chat_id in initiator_user_ids and initiator_user_ids[chat_id] == user_id:
+                if user_key in initiator_user_ids and initiator_user_ids[user_key] == user_id:
                     bot.send_message(chat_id, "Đã huỷ. Bạn có thể bắt đầu lại bằng lệnh /share.")
                     cleanup_data(chat_id, user_id)
-                    # Remove the initiator user ID for this chat
-                    if chat_id in initiator_user_ids:
-                        del initiator_user_ids[chat_id]
+                    remove_inline_keyboard(chat_id, user_id)
+                    del initiator_user_ids[user_key]
+                    share_in_progress[user_key] = False  # Reset the flag
                     return
                 else:
                     bot.send_message(chat_id, "Bạn không có quyền huỷ quá trình này.")
@@ -438,15 +479,18 @@ def process_cookie_file(message):
         markup.add(cancel_button)
 
         # Store the message ID of the inline keyboard to allow editing later
-        message_obj = bot.send_message(chat_id, "Đã nhận file cookie. Vui lòng nhập ID bài viết cần share.", reply_markup=markup)
+        message_obj = bot.send_message(chat_id, "Đã nhận file cookie. Vui lòng nhập ID bài viết cần share.",
+                                       reply_markup=markup)
         keyboard_message_ids[user_key] = message_obj.message_id
 
-        bot.register_next_step_handler(message, process_id)
+        # Register the next step handler for this user_key
+        register_next_step_handler(message, process_id)
     except Exception as e:
         logging.exception(f"User {user_id} - Error processing file for chat_id {chat_id}: {e}")
         bot.reply_to(message, "Lỗi xử lý file cookie. Vui lòng thử lại.")  # User-friendly message
         cleanup_data(chat_id, user_id)  # Clear data
         remove_inline_keyboard(chat_id, user_id)  # Remove the inline keyboard
+        share_in_progress[user_key] = False  # Reset the flag
 
 
 def process_id(message):
@@ -454,10 +498,15 @@ def process_id(message):
     user_id = message.from_user.id
     user_key = (chat_id, user_id)
 
+    # Double-check that this message is from the right user and the process is in progress
+    if user_key not in initiator_user_ids or initiator_user_ids[user_key] != user_id or not share_in_progress.get(user_key, False):
+        return  # Ignore the message if it's from someone else or no process is running
+
     # Check if the user sent a callback query (from the inline keyboard) instead of a file.
     if message.content_type == 'text' and message.text == "/share":
         # User restarted the process. Clean up the data.
         cleanup_data(chat_id, user_id)
+        share_in_progress[user_key] = False  # Reset the flag
         return  # stop processing this request
 
     try:
@@ -465,19 +514,20 @@ def process_id(message):
         if not id_share.isdigit():
             # Check for a "cancel" message
             if message.text and message.text.lower() == "cancel":
-                if chat_id in initiator_user_ids and initiator_user_ids[chat_id] == user_id:
+                if user_key in initiator_user_ids and initiator_user_ids[user_key] == user_id:
                     bot.send_message(chat_id, "Đã huỷ. Bạn có thể bắt đầu lại bằng lệnh /share.")
                     cleanup_data(chat_id, user_id)
-                    # Remove the initiator user ID for this chat
-                    if chat_id in initiator_user_ids:
-                        del initiator_user_ids[chat_id]
+                    remove_inline_keyboard(chat_id, user_id)
+                    del initiator_user_ids[user_key]
+                    share_in_progress[user_key] = False  # Reset the flag
                     return
                 else:
                     bot.send_message(chat_id, "Bạn không có quyền huỷ quá trình này.")
                     return
 
             bot.reply_to(message, "ID không hợp lệ. Vui lòng nhập lại ID bài viết cần share.")
-            bot.register_next_step_handler(message, process_id)
+            # Register the next step handler for this user_key
+            register_next_step_handler(message, process_id)
             return
 
         share_data[user_key]['id_share'] = id_share
@@ -487,24 +537,34 @@ def process_id(message):
         markup.add(cancel_button)
 
         # Store the message ID of the inline keyboard to allow editing later
-        message_obj = bot.send_message(chat_id, "Vui lòng nhập delay giữa các lần share (giây).", reply_markup=markup)
+        message_obj = bot.send_message(chat_id, "Vui lòng nhập delay giữa các lần share (giây).",
+                                       reply_markup=markup)
         keyboard_message_ids[user_key] = message_obj.message_id
-        bot.register_next_step_handler(message, process_delay)
+
+        # Register the next step handler for this user_key
+        register_next_step_handler(message, process_delay)
     except Exception as e:
         logging.exception(f"User {user_id} - Error processing ID for chat_id {chat_id}: {e}")
         bot.reply_to(message, "Lỗi xử lý ID. Vui lòng thử lại.")  # User-friendly message
         cleanup_data(chat_id, user_id)  # Clear data
         remove_inline_keyboard(chat_id, user_id)  # Remove the inline keyboard
+        share_in_progress[user_key] = False  # Reset the flag
 
 
 def process_delay(message):
     chat_id = message.chat.id
     user_id = message.from_user.id
     user_key = (chat_id, user_id)
+
+    # Double-check that this message is from the right user and the process is in progress
+    if user_key not in initiator_user_ids or initiator_user_ids[user_key] != user_id or not share_in_progress.get(user_key, False):
+        return  # Ignore the message if it's from someone else or no process is running
+
     # Check if the user sent a callback query (from the inline keyboard) instead of a file.
     if message.content_type == 'text' and message.text == "/share":
         # User restarted the process. Clean up the data.
         cleanup_data(chat_id, user_id)
+        share_in_progress[user_key] = False  # Reset the flag
         return  # stop processing this request
     try:
         delay_str = message.text.strip()
@@ -515,18 +575,19 @@ def process_delay(message):
         except ValueError:
             # Check for a "cancel" message
             if message.text and message.text.lower() == "cancel":
-                if chat_id in initiator_user_ids and initiator_user_ids[chat_id] == user_id:
+                if user_key in initiator_user_ids and initiator_user_ids[user_key] == user_id:
                     bot.send_message(chat_id, "Đã huỷ. Bạn có thể bắt đầu lại bằng lệnh /share.")
                     cleanup_data(chat_id, user_id)
-                    # Remove the initiator user ID for this chat
-                    if chat_id in initiator_user_ids:
-                        del initiator_user_ids[chat_id]
+                    remove_inline_keyboard(chat_id, user_id)
+                    del initiator_user_ids[user_key]
+                    share_in_progress[user_key] = False  # Reset the flag
                     return
                 else:
                     bot.send_message(chat_id, "Bạn không có quyền huỷ quá trình này.")
                     return
             bot.reply_to(message, "Delay không hợp lệ. Vui lòng nhập lại delay (giây) là một số dương.")
-            bot.register_next_step_handler(message, process_delay)
+            # Register the next step handler for this user_key
+            register_next_step_handler(message, process_delay)
             return
 
         share_data[user_key]['delay'] = delay
@@ -536,25 +597,35 @@ def process_delay(message):
         markup.add(cancel_button)
 
         # Store the message ID of the inline keyboard to allow editing later
-        message_obj = bot.send_message(chat_id, "Vui lòng nhập tổng số lượng share (0 để không giới hạn).", reply_markup=markup)
+        message_obj = bot.send_message(chat_id, "Vui lòng nhập tổng số lượng share (0 để không giới hạn).",
+                                       reply_markup=markup)
         keyboard_message_ids[user_key] = message_obj.message_id
-        bot.register_next_step_handler(message, process_total_shares)
+
+        # Register the next step handler for this user_key
+        register_next_step_handler(message, process_total_shares)
 
     except Exception as e:
         logging.exception(f"User {user_id} - Error processing delay for chat_id {chat_id}: {e}")
         bot.reply_to(message, "Lỗi xử lý delay. Vui lòng thử lại.")  # User-friendly message
         cleanup_data(chat_id, user_id)  # Clear data
         remove_inline_keyboard(chat_id, user_id)  # Remove the inline keyboard
+        share_in_progress[user_key] = False  # Reset the flag
 
 
 def process_total_shares(message):
     chat_id = message.chat.id
     user_id = message.from_user.id
     user_key = (chat_id, user_id)
+
+    # Double-check that this message is from the right user and the process is in progress
+    if user_key not in initiator_user_ids or initiator_user_ids[user_key] != user_id or not share_in_progress.get(user_key, False):
+        return  # Ignore the message if it's from someone else or no process is running
+
     # Check if the user sent a callback query (from the inline keyboard) instead of a file.
     if message.content_type == 'text' and message.text == "/share":
         # User restarted the process. Clean up the data.
         cleanup_data(chat_id, user_id)
+        share_in_progress[user_key] = False  # Reset the flag
         return  # stop processing this request
 
     try:
@@ -566,19 +637,20 @@ def process_total_shares(message):
         except ValueError:
             # Check for a "cancel" message
             if message.text and message.text.lower() == "cancel":
-                if chat_id in initiator_user_ids and initiator_user_ids[chat_id] == user_id:
+                if user_key in initiator_user_ids and initiator_user_ids[user_key] == user_id:
                     bot.send_message(chat_id, "Đã huỷ. Bạn có thể bắt đầu lại bằng lệnh /share.")
                     cleanup_data(chat_id, user_id)
-                    # Remove the initiator user ID for this chat
-                    if chat_id in initiator_user_ids:
-                        del initiator_user_ids[chat_id]
+                    remove_inline_keyboard(chat_id, user_id)
+                    del initiator_user_ids[user_key]
+                    share_in_progress[user_key] = False  # Reset the flag
                     return
                 else:
                     bot.send_message(chat_id, "Bạn không có quyền huỷ quá trình này.")
                     return
             bot.reply_to(message,
                          "Số lượng share không hợp lệ. Vui lòng nhập lại tổng số lượng share (0 để không giới hạn) là một số dương.")
-            bot.register_next_step_handler(message, process_total_shares)
+            # Register the next step handler for this user_key
+            register_next_step_handler(message, process_total_shares)
             return
 
         share_data[user_key]['total_share_limit'] = total_share_limit
@@ -598,6 +670,7 @@ def process_total_shares(message):
         bot.reply_to(message, "Lỗi xử lý số lượng share. Vui lòng thử lại.")  # User-friendly message
         cleanup_data(chat_id, user_id)  # Clear data
         remove_inline_keyboard(chat_id, user_id)  # Remove the inline keyboard
+        share_in_progress[user_key] = False  # Reset the flag
 
 
 def start_sharing(chat_id, user_id, username):
@@ -606,6 +679,7 @@ def start_sharing(chat_id, user_id, username):
 
     if not data:
         bot.send_message(chat_id, "Dữ liệu không đầy đủ. Vui lòng bắt đầu lại bằng lệnh /share.")
+        share_in_progress[user_key] = False  # Reset the flag
         return
 
     input_file = data['cookie_file']
@@ -613,11 +687,12 @@ def start_sharing(chat_id, user_id, username):
     delay = data['delay']
     total_share_limit = data['total_share_limit']
 
-        # Get tokens, stop if fails
+    # Get tokens, stop if fails
     all_tokens = get_token(input_file, chat_id, user_id)
     if not all_tokens:
         # get_token already sent a message to the user
         cleanup_data(chat_id, user_id)
+        share_in_progress[user_key] = False  # Reset the flag
         return
 
     total_live = len(all_tokens)
@@ -625,6 +700,7 @@ def start_sharing(chat_id, user_id, username):
     if total_live == 0:
         bot.send_message(chat_id, "Không tìm thấy token hợp lệ nào.")
         cleanup_data(chat_id, user_id)
+        share_in_progress[user_key] = False  # Reset the flag
         return
 
     bot.send_message(chat_id, f"Tìm thấy {total_live} token hợp lệ.")
@@ -638,7 +714,6 @@ def start_sharing(chat_id, user_id, username):
 
     stt = 0
     shared_count = 0
-    # global successful_shares #No longer global. Use the one defined per chat_id
     successful_shares[user_key] = 0  # Reset successful shares count for this chat_id
     continue_sharing = True
     stop_sharing_flags[user_key] = False  # Reset stop flag at start
@@ -697,12 +772,12 @@ def start_sharing(chat_id, user_id, username):
         except Exception as e:
             logging.exception(f"User {user_id} - Error closing session: {e}")
     token_sessions = {}  # Reset
-    remove_inline_keyboard(chat_id, user_id) # Remove the inline keyboard after finished or stopped
+    remove_inline_keyboard(chat_id, user_id)  # Remove the inline keyboard after finished or stopped
+    share_in_progress[user_key] = False  # Reset the flag
 
 
 def process_share(tach, id_share, stt, chat_id, user_id, username):  # Removed message_id argument
     user_key = (chat_id, user_id)
-    # global successful_shares #No longer global, each chat_id has it's counter
     global user_share_counts  # access global variable
 
     if stop_sharing_flags.get(user_key, False):
@@ -741,6 +816,7 @@ def update_data_timestamp(chat_id, user_id):
     user_key = (chat_id, user_id)
     data_timestamps[user_key] = time.time()
 
+
 # Function to remove the inline keyboard
 def remove_inline_keyboard(chat_id, user_id):
     user_key = (chat_id, user_id)
@@ -755,9 +831,10 @@ def remove_inline_keyboard(chat_id, user_id):
         except Exception as e:
             logging.exception(f"User {user_id} - Error removing inline keyboard: {e}")
 
+
 def cleanup_data(chat_id, user_id):
     user_key = (chat_id, user_id)
-    global share_data, user_share_counts, request_timestamps, token_sessions, successful_shares, report_sent, initiator_user_ids
+    global share_data, user_share_counts, request_timestamps, token_sessions, successful_shares, report_sent, initiator_user_ids, share_in_progress
 
     logging.info(f"User {user_id} - Cleaning up data for chat_id: {chat_id}")
 
@@ -790,13 +867,17 @@ def cleanup_data(chat_id, user_id):
     if user_key in data_timestamps:
         del data_timestamps[user_key]
 
-     # Remove the initiator user ID for this chat
-    if chat_id in initiator_user_ids:
-        del initiator_user_ids[chat_id]
+    # Remove the initiator user ID
+    if user_key in initiator_user_ids:
+        del initiator_user_ids[user_key]
 
     # Remove message id for inline keyboard
     if user_key in keyboard_message_ids:
         del keyboard_message_ids[user_key]
+
+    #Remove share in progress
+    if user_key in share_in_progress:
+        del share_in_progress[user_key]
 
 
 def periodic_cleanup():
