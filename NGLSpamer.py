@@ -321,6 +321,10 @@ def process_cookie_file(message):
         file_content = downloaded_file.decode('utf-8').splitlines()
         share_data[chat_id]['cookie_file'] = file_content
         update_data_timestamp(chat_id)
+
+        # Delete the message containing the cookie file
+        bot.delete_message(chat_id, message.message_id)
+
         bot.send_message(chat_id, "Đã nhận file cookie. Vui lòng nhập ID bài viết cần share.")
         bot.register_next_step_handler(message, process_id)
     except Exception as e:
