@@ -1,269 +1,220 @@
-import sys
-import os
-import requests
-import threading
-import time
-import json
 import random
-from time import strftime
+import string
+import requests
+import os
+import time
+import logging
+from http.client import HTTPException
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
+import secrets
+from fake_useragent import UserAgent, FakeUserAgentError
 import telebot
 from telebot import types
-import queue
 
-# Replace with your actual bot token
-BOT_TOKEN = "7766543633:AAHd5v0ILieeJdpnRTCdh2RvzV1M8jli4uc"
-ADMIN_ID = 6940071938  # Replace with your Telegram User ID
-DAILY_SHARE_LIMIT = 5000
-
+# Replace 'YOUR_TELEGRAM_BOT_TOKEN' with your actual bot token
+BOT_TOKEN = '7766543633:AAHd5v0ILieeJdpnRTCdh2RvzV1M8jli4uc'
 bot = telebot.TeleBot(BOT_TOKEN)
 
-user_states = {} # Track user's progress in the share process.
-user_share_counts = {}  # Track user's daily share counts.
+logging.basicConfig(level=logging.ERROR, format='%(asctime)s - %(levelname)s - %(message)s')
 
-user_agents = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14.2; rv:122.0) Gecko/20100101 Firefox/122.0",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/120.0.2210.144",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; Trident/7.0; rv:11.0) like Gecko",
-    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Mobile/15E148 Safari/604.1",
-    "Mozilla/5.0 (iPad; CPU OS 17_2_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Mobile/15E148 Safari/604.1",
-    "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.259 Mobile Safari/537.36"
-]
 
-gome_token = []
+nglusername = None
+message = None
+Count = None
+delay = None
+spamming = False
+chat_id = None
 
-def get_token(input_file, message):
-    gome_token = []
-    for cookie in input_file:
-        cookie = cookie.strip()
-        if not cookie:
-            continue
-        header_ = {
-            'authority': 'business.facebook.com',
-            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
-            'accept-language': 'vi-VN,vi;q=0.9,fr-FR;q=0.8,fr;q=0.7,en-US;q=0.6,en;q=0.5',
-            'cache-control': 'max-age=0',
-            'cookie': cookie,
-            'referer': 'https://www.facebook.com/',
-            'sec-ch-ua': '".Not/A)Brand";v="99", "Google Chrome";v="103", "Chromium";v="103"',
-            'sec-ch-ua-mobile': '?0',
-            'sec-ch-ua-platform': '"Linux"',
-            'sec-fetch-dest': 'document',
-            'sec-fetch-mode': 'navigate',
-            'sec-fetch-site': 'same-origin',
-            'sec-fetch-user': '?1',
-            'upgrade-insecure-requests': '1',
-            'user-agent': random.choice(user_agents)
-        }
-        try:
-            home_business = requests.get('https://business.facebook.com/content_management', headers=header_, timeout=15).text
-            if 'EAAG' in home_business:
-                token = home_business.split('EAAG')[1].split('","')[0]
-                cookie_token = f'{cookie}|EAAG{token}'
-                gome_token.append(cookie_token)
-                bot.send_message(message.chat.id, f"[+] Token extracted from cookie: {cookie[:50]}... (Live Cookie)") # Thông báo cookie sống
-            else:
-                bot.send_message(message.chat.id, f"[-] Không thể lấy token từ cookie: {cookie[:50]}... Cookie không hợp lệ (Dead Cookie).") # Thông báo cookie die/không hợp lệ
-        except requests.exceptions.RequestException as e:
-             bot.send_message(message.chat.id, f"[!] Lỗi request khi lấy token cho cookie: {cookie[:50]}... {e}") # Lỗi request
-        except Exception as e:
-             bot.send_message(message.chat.id, f"[!] Lỗi không mong muốn khi lấy token cho cookie: {cookie[:50]}... {e}") # Lỗi không xác định
-    return gome_token
+def tao_device_id():
+    characters = string.ascii_lowercase + string.digits
+    parts = [
+        ''.join(random.choices(characters, k=8)),
+        ''.join(random.choices(characters, k=4)),
+        ''.join(random.choices(characters, k=4)),
+        ''.join(random.choices(characters, k=4)),
+        ''.join(random.choices(characters, k=12)),
+    ]
+    return f"{'-'.join(parts)}"
 
-def share(tach, id_share):
-    cookie = tach.split('|')[0]
-    token = tach.split('|')[1]
-    he = {
+def lay_user_agent():
+    try:
+        ua = UserAgent()
+        return ua.random
+    except FakeUserAgentError as e:
+        logging.error(f"Lỗi khi lấy User Agent: {e}")
+        bot.send_message(chat_id, "Lỗi: Không thể lấy User Agent. Vui lòng kiểm tra kết nối mạng và cài đặt fake-useragent.")
+        return None
+
+def tao_session_retry():
+    retry_strategy = Retry(
+        total=5,
+        status_forcelist=[429, 500, 502, 503, 504],
+        backoff_factor=1,
+        raise_on_status=False
+    )
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    session = requests.Session()
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    return session
+
+def random_headers():
+    return {
+        'Host': 'ngl.link',
+        'sec-ch-ua': f'"{random.choice(["Google Chrome", "Mozilla Firefox", "Microsoft Edge"]) }";v="{random.randint(100,120)}", "Chromium";v="{random.randint(100,120)}", "Not-A.Brand";v="24"',
         'accept': '*/*',
-        'accept-encoding': 'gzip, deflate',
-        'connection': 'keep-alive',
-        'content-length': '0',
-        'cookie': cookie,
-        'host': 'graph.facebook.com',
-        'user-agent': random.choice(user_agents),
-        'referer': f'https://m.facebook.com/{id_share}'
+        'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        'x-requested-with': 'XMLHttpRequest',
+        'sec-ch-ua-mobile': '?0',
+        'user-agent': f'{lay_user_agent()}',
+        'sec-ch-ua-platform': f'"{random.choice(["Windows", "macOS", "Linux"])}"',
+        'origin': 'https://ngl.link',
+        'sec-fetch-site': 'same-origin',
+        'sec-fetch-mode': 'cors',
+        'sec-fetch-dest': 'empty',
+        'referer': f'https://ngl.link/{nglusername}',
+        'accept-language': f'{random.choice(["en-US,en;q=0.9","tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7","es-ES,es;q=0.9,en-US;q=0.8,en;q=0.7"])}',
+        'x-forwarded-for': f'{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}'
     }
+
+
+def gui_ngl_tin_nhan(session, nglusername, message):
+
+    data = {
+        'username': f'{nglusername}',
+        'question': f'{message}',
+        'deviceId': f'{tao_device_id()}',
+        'gameSlug': '',
+        'referrer': '',
+        't': str(int(time.time() * 1000)),
+        'r': secrets.token_urlsafe(16),
+    }
+
     try:
-        res = requests.post(f'https://graph.facebook.com/me/feed?link=https://m.facebook.com/{id_share}&published=0&access_token={token}', headers=he, timeout=10).json()
-        if 'id' in res:
-            return True
-        else:
-            print(f"[!] Share thất bại: ID: {id_share} - Phản hồi: {res}")
-            return False
+        response = session.post('https://ngl.link/api/submit', headers=random_headers(), data=data, timeout=10)
+        response.raise_for_status()
+        return True, response.status_code
     except requests.exceptions.RequestException as e:
-        print(f"[!] Lỗi request share: ID: {id_share} - {e}")
-        return False
-    except Exception as e:
-        print(f"[!] Lỗi không mong muốn khi share: ID: {id_share} - {e}")
-        return False
+        logging.error(f"Lỗi Request: {e}")
+        return False, f"Lỗi Request: {e}"
+    except HTTPException as e:
+        logging.error(f"Lỗi HTTP: {e}")
+        return False, f"Lỗi HTTP: {e}"
 
+def spam_ngl(chat_id):
+    global nglusername, message, Count, delay, spamming
 
-def share_thread(tach, id_share, results_queue):
-    success = share(tach, id_share)
-    results_queue.put(success) # Put the result (True or False) into the queue
+    session = tao_session_retry()
+    value = 0
+    notsend = 0
 
-def reset_daily_share_counts():
-    global user_share_counts
-    user_share_counts = {}
-    print("Daily share counts reset.")
-    threading.Timer(86400, reset_daily_share_counts).start()  # Reset every 24 hours (86400 seconds)
+    while value < Count and spamming:
+        success, result = gui_ngl_tin_nhan(session, nglusername, message)
 
-@bot.message_handler(commands=['start'])
-def start(message):
-    bot.reply_to(message, "Chào mừng bạn đến với tool share Facebook!\nSử dụng /share để bắt đầu.")
+        if success:
+            notsend = 0
+            value += 1
+            print(f"[+] Đã gửi => {value}")
+            bot.send_message(chat_id, f"[+] Đã gửi => {value}")
 
-@bot.message_handler(commands=['share'])
-def share_command(message):
-    user_id = message.chat.id
-    user_states[user_id] = {"step": "waiting_for_cookie_file"}
-    bot.send_message(user_id, "Vui lòng gửi file chứa Cookies (cookies.txt).")
-
-@bot.message_handler(content_types=['document'])
-def handle_document(message):
-    user_id = message.chat.id
-
-    if user_id not in user_states or user_states[user_id]["step"] != "waiting_for_cookie_file":
-        bot.reply_to(message, "Vui lòng sử dụng lệnh /share trước khi gửi file.")
-        return
-
-    try:
-        file_info = bot.get_file(message.document.file_id)
-        downloaded_file = bot.download_file(file_info.file_path)
-        cookie_file = downloaded_file.decode('utf-8').splitlines()  # Split into lines
-        user_states[user_id]["cookie_file"] = cookie_file
-        bot.send_message(user_id, "Đã nhận file Cookies. Vui lòng nhập ID bài viết cần share:")
-        user_states[user_id]["step"] = "waiting_for_post_id"
-
-    except Exception as e:
-        bot.reply_to(message, f"Lỗi khi xử lý file: {e}")
-        del user_states[user_id]
-
-@bot.message_handler(func=lambda message: user_states.get(message.chat.id, {}).get("step") == "waiting_for_post_id")
-def handle_post_id(message):
-    user_id = message.chat.id
-    post_id = message.text.strip()
-
-    if not post_id:
-        bot.send_message(user_id, "ID bài viết không hợp lệ. Vui lòng nhập lại:")
-        return
-
-    user_states[user_id]["post_id"] = post_id
-    bot.send_message(user_id, "Vui lòng nhập delay giữa các lần share (giây):")
-    user_states[user_id]["step"] = "waiting_for_delay"
-
-@bot.message_handler(func=lambda message: user_states.get(message.chat.id, {}).get("step") == "waiting_for_delay")
-def handle_delay(message):
-    user_id = message.chat.id
-    delay_str = message.text.strip()
-
-    try:
-        delay = int(delay_str)
-        if delay < 0:
-            raise ValueError
-    except ValueError:
-        bot.send_message(user_id, "Delay không hợp lệ. Vui lòng nhập một số nguyên dương:")
-        return
-
-    user_states[user_id]["delay"] = delay
-    bot.send_message(user_id, "Vui lòng nhập tổng số lượng share (0 để không giới hạn):")
-    user_states[user_id]["step"] = "waiting_for_share_limit"
-
-@bot.message_handler(func=lambda message: user_states.get(message.chat.id, {}).get("step") == "waiting_for_share_limit")
-def handle_share_limit(message):
-    user_id = message.chat.id
-    limit_str = message.text.strip()
-
-    try:
-        share_limit = int(limit_str)
-        if share_limit < 0:
-            raise ValueError
-    except ValueError:
-        bot.send_message(user_id, "Số lượng share không hợp lệ. Vui lòng nhập một số nguyên dương hoặc 0:")
-        return
-
-    user_states[user_id]["share_limit"] = share_limit
-    start_sharing(message)
-
-def start_sharing(message):
-    user_id = message.chat.id
-    state = user_states.get(user_id)
-
-    if not state or "cookie_file" not in state or "post_id" not in state or "delay" not in state or "share_limit" not in state:
-        bot.send_message(user_id, "Có lỗi xảy ra. Vui lòng bắt đầu lại bằng lệnh /share.")
-        del user_states[user_id]
-        return
-
-    cookie_file = state["cookie_file"]
-    post_id = state["post_id"]
-    delay = state["delay"]
-    share_limit = state["share_limit"]
-
-    all_tokens = get_token(cookie_file, message) # Pass message to get_token to send messages
-    total_live = len(all_tokens)
-
-    if total_live == 0:
-        bot.send_message(user_id, "Không tìm thấy token hợp lệ nào. Vui lòng kiểm tra lại file Cookies.")
-        del user_states[user_id]
-        return
-
-    bot.send_message(user_id, f"Đã tìm thấy {total_live} token hợp lệ. Bắt đầu share...")
-
-    # Check daily limit
-    if user_id not in user_share_counts:
-        user_share_counts[user_id] = 0
-
-    if user_id != ADMIN_ID and user_share_counts[user_id] >= DAILY_SHARE_LIMIT:
-        bot.send_message(user_id, f"Bạn đã đạt giới hạn {DAILY_SHARE_LIMIT} share mỗi ngày. Vui lòng thử lại sau.")
-        del user_states[user_id]
-        return
-
-    stt = 0
-    shared_count = 0
-    continue_sharing = True
-    threads = []
-    results_queue = queue.Queue() # Queue to collect share results
-
-    for tach in all_tokens:
-        if not continue_sharing:
-            break
-
-        stt += 1
-        thread = threading.Thread(target=share_thread, args=(tach, post_id, results_queue))
-        threads.append(thread)
-        thread.start()
-        time.sleep(delay)
-        shared_count += 1
-
-        if user_id != ADMIN_ID:
-            user_share_counts[user_id] += 1
-
-        if share_limit > 0 and shared_count >= share_limit:
-            continue_sharing = False
-            break
-
-        if user_id != ADMIN_ID and user_share_counts[user_id] >= DAILY_SHARE_LIMIT:
-            continue_sharing = False
-            break
-
-    # Wait for all threads to complete and collect results
-    successful_shares = 0
-    failed_shares = 0
-    for thread in threads:
-        thread.join()
-        result = results_queue.get() # Get result from queue
-        if result:
-            successful_shares += 1
         else:
-            failed_shares += 1
+            notsend += 1
+            print(f"[-] Chưa gửi được, {result}")
+            bot.send_message(chat_id, f"[-] Chưa gửi được, {result}")
+        
+        if notsend == 4:
+            print("[!] Đang đổi thông tin...")
+            bot.send_message(chat_id, "[!] Đang đổi thông tin...")
+            notsend = 0
 
-    bot.send_message(user_id, f"Hoàn thành share ID {post_id}.\nTổng cộng: {shared_count} shares đã thử.\n✅ Thành công: {successful_shares}\n❌ Thất bại: {failed_shares}")
+        time.sleep(delay + random.uniform(0,0.5))
 
-    del user_states[user_id]  # Clean up the user's state
+    if spamming:  # Only send completion message if spamming wasn't stopped manually
+        bot.send_message(chat_id, "Hoàn thành spam!")
+    spamming = False # Reset spamming flag after completion or interruption
 
 
-if __name__ == '__main__':
-    reset_daily_share_counts() # Start the daily reset timer.
-    bot.infinity_polling()
+# Telegram Bot Handlers
+@bot.message_handler(commands=['ngl'])
+def start_command(message):
+    global chat_id
+    chat_id = message.chat.id
+    bot.send_message(chat_id, "Hãy nhập tên người dùng NGL:")
+    bot.register_next_step_handler(message, get_username)
+
+def get_username(message):
+    global nglusername, chat_id
+    chat_id = message.chat.id
+    nglusername = message.text
+    bot.send_message(chat_id, "Nhập nội dung tin nhắn:")
+    bot.register_next_step_handler(message, get_message)
+
+def get_message(message):
+    global nglusername, message, chat_id
+    chat_id = message.chat.id
+    message = message.text
+    bot.send_message(chat_id, "Nhập số lượng tin nhắn:")
+    bot.register_next_step_handler(message, get_count)
+
+def get_count(message):
+    global nglusername, message, Count, chat_id
+    chat_id = message.chat.id
+    try:
+        Count = int(message.text)
+        bot.send_message(chat_id, "Nhập độ trễ giữa các tin nhắn (0 để nhanh nhất):")
+        bot.register_next_step_handler(message, get_delay)
+    except ValueError:
+        bot.send_message(chat_id, "Lỗi: Số lượng tin nhắn không hợp lệ. Vui lòng nhập một số.")
+        bot.register_next_step_handler(message, get_count)
+
+def get_delay(message):
+    global nglusername, message, Count, delay, chat_id
+    chat_id = message.chat.id
+    try:
+        delay = float(message.text)
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+        itembtn1 = types.KeyboardButton('Bắt đầu spam')
+        itembtn2 = types.KeyboardButton('Hủy bỏ')
+        markup.add(itembtn1, itembtn2)
+        bot.send_message(chat_id, "Bạn có muốn bắt đầu spam không?", reply_markup=markup)
+        bot.register_next_step_handler(message, confirm_spam)
+
+    except ValueError:
+        bot.send_message(chat_id, "Lỗi: Độ trễ không hợp lệ. Vui lòng nhập một số.")
+        bot.register_next_step_handler(message, get_delay)
+
+def confirm_spam(message):
+    global spamming, chat_id
+    chat_id = message.chat.id
+    if message.text == 'Bắt đầu spam':
+        if not all([nglusername, message, Count, delay]):
+            bot.send_message(chat_id, "Lỗi: Vui lòng sử dụng lệnh /ngl theo đúng cú pháp để cung cấp đủ thông tin.")
+            spamming = False
+            return
+
+        spamming = True
+        bot.send_message(chat_id, "Bắt đầu spam...", reply_markup=types.ReplyKeyboardRemove())
+        spam_ngl(chat_id)
+    else:
+        spamming = False
+        bot.send_message(chat_id, "Đã hủy bỏ.", reply_markup=types.ReplyKeyboardRemove())
+
+@bot.message_handler(commands=['stop'])
+def stop_command(message):
+    global spamming, chat_id
+    chat_id = message.chat.id
+    if spamming:
+        spamming = False
+        bot.send_message(chat_id, "Đã dừng spam.")
+    else:
+        bot.send_message(chat_id, "Không có tiến trình spam nào đang chạy.")
+
+@bot.message_handler(func=lambda message: True)
+def default_command(message):
+    global chat_id
+    chat_id = message.chat.id
+    bot.reply_to(message, "Lệnh không hợp lệ. Vui lòng sử dụng /ngl để bắt đầu hoặc /stop để dừng.")
+
+print("Bot NGL Spammer Telegram đã chạy")
+bot.infinity_polling()
