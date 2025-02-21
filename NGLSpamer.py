@@ -8,6 +8,7 @@ import random
 from time import strftime
 import telebot
 from telebot import types
+import queue
 
 # Replace with your actual bot token
 BOT_TOKEN = "7766543633:AAHd5v0ILieeJdpnRTCdh2RvzV1M8jli4uc"
@@ -34,7 +35,7 @@ user_agents = [
 
 gome_token = []
 
-def get_token(input_file):
+def get_token(input_file, message):
     gome_token = []
     for cookie in input_file:
         cookie = cookie.strip()
@@ -63,12 +64,13 @@ def get_token(input_file):
                 token = home_business.split('EAAG')[1].split('","')[0]
                 cookie_token = f'{cookie}|EAAG{token}'
                 gome_token.append(cookie_token)
+                bot.send_message(message.chat.id, f"[+] Token extracted from cookie: {cookie[:50]}... (Live Cookie)") # Thông báo cookie sống
             else:
-                bot.send_message(message.chat.id, f"[!] Không thể lấy token từ cookie: {cookie[:50]}... Cookie có thể không hợp lệ.")
+                bot.send_message(message.chat.id, f"[-] Không thể lấy token từ cookie: {cookie[:50]}... Cookie không hợp lệ (Dead Cookie).") # Thông báo cookie die/không hợp lệ
         except requests.exceptions.RequestException as e:
-             bot.send_message(message.chat.id, f"[!] Lỗi khi lấy token cho cookie: {cookie[:50]}... {e}")
+             bot.send_message(message.chat.id, f"[!] Lỗi request khi lấy token cho cookie: {cookie[:50]}... {e}") # Lỗi request
         except Exception as e:
-             bot.send_message(message.chat.id, f"[!] Lỗi không mong muốn khi lấy token cho cookie: {cookie[:50]}... {e}")
+             bot.send_message(message.chat.id, f"[!] Lỗi không mong muốn khi lấy token cho cookie: {cookie[:50]}... {e}") # Lỗi không xác định
     return gome_token
 
 def share(tach, id_share):
@@ -99,13 +101,9 @@ def share(tach, id_share):
         return False
 
 
-def share_thread(user_id, tach, id_share, stt):
-    if share(tach, id_share):
-        bot.send_message(user_id, f'[{stt}] SHARE THÀNH CÔNG ID {id_share}')
-        return True
-    else:
-        bot.send_message(user_id, f'[{stt}] SHARE THẤT BẠI ID {id_share}')
-        return False
+def share_thread(tach, id_share, results_queue):
+    success = share(tach, id_share)
+    results_queue.put(success) # Put the result (True or False) into the queue
 
 def reset_daily_share_counts():
     global user_share_counts
@@ -203,7 +201,7 @@ def start_sharing(message):
     delay = state["delay"]
     share_limit = state["share_limit"]
 
-    all_tokens = get_token(cookie_file)
+    all_tokens = get_token(cookie_file, message) # Pass message to get_token to send messages
     total_live = len(all_tokens)
 
     if total_live == 0:
@@ -225,13 +223,16 @@ def start_sharing(message):
     stt = 0
     shared_count = 0
     continue_sharing = True
+    threads = []
+    results_queue = queue.Queue() # Queue to collect share results
 
     for tach in all_tokens:
         if not continue_sharing:
             break
 
         stt += 1
-        thread = threading.Thread(target=sharing_thread, args=(user_id, tach, post_id, stt, delay))
+        thread = threading.Thread(target=share_thread, args=(tach, post_id, results_queue))
+        threads.append(thread)
         thread.start()
         time.sleep(delay)
         shared_count += 1
@@ -241,21 +242,27 @@ def start_sharing(message):
 
         if share_limit > 0 and shared_count >= share_limit:
             continue_sharing = False
-            bot.send_message(user_id, f"Đã đạt giới hạn share là {share_limit} shares.")
             break
 
         if user_id != ADMIN_ID and user_share_counts[user_id] >= DAILY_SHARE_LIMIT:
             continue_sharing = False
-            bot.send_message(user_id, f"Bạn đã đạt giới hạn {DAILY_SHARE_LIMIT} share mỗi ngày. Vui lòng thử lại sau.")
             break
+
+    # Wait for all threads to complete and collect results
+    successful_shares = 0
+    failed_shares = 0
+    for thread in threads:
+        thread.join()
+        result = results_queue.get() # Get result from queue
+        if result:
+            successful_shares += 1
+        else:
+            failed_shares += 1
+
+    bot.send_message(user_id, f"Hoàn thành share ID {post_id}.\nTổng cộng: {shared_count} shares đã thử.\n✅ Thành công: {successful_shares}\n❌ Thất bại: {failed_shares}")
 
     del user_states[user_id]  # Clean up the user's state
 
-def sharing_thread(user_id, tach, post_id, stt, delay):
-        if share(tach, post_id):
-            bot.send_message(user_id, f'[{stt}] SHARE THÀNH CÔNG ID {post_id}')
-        else:
-            bot.send_message(user_id, f'[{stt}] SHARE THẤT BẠI ID {post_id}')
 
 if __name__ == '__main__':
     reset_daily_share_counts() # Start the daily reset timer.
