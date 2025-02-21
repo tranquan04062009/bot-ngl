@@ -7,8 +7,10 @@ import json
 import random
 from time import strftime
 import telebot
-from telebot import types
+from telebot import types, util
 import uuid
+import logging
+
 
 # Replace with your Telegram bot token
 BOT_TOKEN = "7766543633:AAHd5v0ILieeJdpnRTCdh2RvzV1M8jli4uc"  # REPLACE
@@ -80,6 +82,10 @@ token_sessions = {}  # Store requests.Session() objects for each token
 BASE_REQUESTS_PER_MINUTE = 30  # Starting point.  Adjust!
 REQUESTS_PER_MINUTE_VARIATION = 10  # Add some randomness
 request_timestamps = {}  # per token rate limiting
+
+
+# --- Logging Configuration ---
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
 def get_random_proxy():
@@ -182,11 +188,11 @@ def get_token(input_file, chat_id):
                 token_status[cookie_token] = "live"
             else:
                 token_status[cookie_token] = "die"  # status die at token retrieval
-                print(f"[!] Không thể lấy token từ cookie: {cookie[:50]}... Cookie có thể không hợp lệ.")
+                logging.warning(f"Không thể lấy token từ cookie: {cookie[:50]}... Cookie có thể không hợp lệ.")
 
         except requests.exceptions.RequestException as e:
             token_status[cookie_token] = "die"
-            print(f"[!] Lỗi khi lấy token cho cookie: {cookie[:50]}... {e}")
+            logging.error(f"Lỗi khi lấy token cho cookie: {cookie[:50]}... {e}")
             bot.send_message(chat_id, f"Lỗi khi lấy token cho cookie: {cookie[:50]}... Dừng tool.")
             stop_sharing_flags[chat_id] = True
             #  Close session on error
@@ -197,7 +203,7 @@ def get_token(input_file, chat_id):
 
         except Exception as e:
             token_status[cookie_token] = "die"
-            print(f"[!] Lỗi không mong muốn khi lấy token cho cookie: {cookie[:50]}... {e}")
+            logging.exception(f"Lỗi không mong muốn khi lấy token cho cookie: {cookie[:50]}...")
             bot.send_message(chat_id, f"Lỗi không mong muốn khi lấy token cho cookie: {cookie[:50]}... Dừng tool.")
             stop_sharing_flags[chat_id] = True
             # Close session on error
@@ -218,7 +224,7 @@ def share(tach, id_share, chat_id):
     session = token_sessions.get(tach)  # Get the session object.
 
     if not session:  # should never happen but just in case
-        print(f"No session found for token: {tach[:50]}.  Creating new session (this is unexpected)")
+        logging.warning(f"No session found for token: {tach[:50]}.  Creating new session (this is unexpected)")
         session = requests.Session()  # create ad hoc, but this should be fixed
         token_sessions[tach] = session  # save adhoc
 
@@ -239,21 +245,21 @@ def share(tach, id_share, chat_id):
             token_status[tach] = "die"  # Token is dead
             bot.send_message(chat_id, f"[!] Share thất bại: ID: {id_share} - Token Die - Dừng tool.")
             stop_sharing_flags[chat_id] = True
-            print(f"[!] Share thất bại: ID: {id_share} - Phản hồi: {res}")
+            logging.warning(f"[!] Share thất bại: ID: {id_share} - Phản hồi: {res}")
             return False
 
     except requests.exceptions.RequestException as e:
         token_status[tach] = "die"
         bot.send_message(chat_id, f"[!] Lỗi request share: ID: {id_share} - {e} - Dừng tool.")
         stop_sharing_flags[chat_id] = True
-        print(f"[!] Lỗi request share: ID: {id_share} - {e}")
+        logging.error(f"[!] Lỗi request share: ID: {id_share} - {e}")
         return False
 
     except Exception as e:
         token_status[tach] = "die"
         bot.send_message(chat_id, f"[!] Lỗi không mong muốn khi share: ID: {id_share} - {e} - Dừng tool.")
         stop_sharing_flags[chat_id] = True
-        print(f"[!] Lỗi không mong muốn khi share: ID: {id_share} - {e}")
+        logging.exception(f"[!] Lỗi không mong muốn khi share: ID: {id_share}")
         return False
 
 
@@ -279,6 +285,12 @@ def start(message):
 def share_command(message):
     chat_id = message.chat.id
     user_id = message.from_user.id
+
+    # Clear any previous data and flags. CRITICAL for fixing prompt issues.
+    if chat_id in share_data:
+        del share_data[chat_id]
+    if chat_id in stop_sharing_flags:
+        del stop_sharing_flags[chat_id]
     share_data[chat_id] = {}  # Initialize data for the user
 
     # Check user's daily share count
@@ -326,6 +338,8 @@ def process_cookie_file(message):
     try:
         if message.document is None:
             bot.reply_to(message, "Vui lòng gửi file chứa cookie (cookies.txt).")
+            # Crucial:  Re-register for cookie file
+            bot.register_next_step_handler(message, process_cookie_file)  # Re-register
             return
 
         file_info = bot.get_file(message.document.file_id)
@@ -335,9 +349,13 @@ def process_cookie_file(message):
         bot.send_message(chat_id, "Đã nhận file cookie. Vui lòng nhập ID bài viết cần share.")
         bot.register_next_step_handler(message, process_id)
     except Exception as e:
-        print(f"Error processing file: {e}")  # Log error for debugging
-        bot.reply_to(message, "Vui lòng gửi file chứa cookie (cookies.txt).")  # User-friendly message
-        del share_data[chat_id]  # Clear data
+        logging.exception("Error processing file:")
+        bot.reply_to(message, "Lỗi khi xử lý file. Vui lòng thử lại.")
+        if chat_id in share_data:  # clear on error.
+            del share_data[chat_id]
+        # And most importantly, restart from the /share command:
+        bot.register_next_step_handler(message, share_command)  # Corrected: Go back to /share
+        return
 
 
 def process_id(message):
@@ -412,14 +430,16 @@ def start_sharing(chat_id):
     all_tokens = get_token(input_file, chat_id)
     if not all_tokens:
         # get_token already sent a message to the user and handled stopping
-        del share_data[chat_id]
+        if chat_id in share_data:
+           del share_data[chat_id]
         return
 
     total_live = len(all_tokens)
 
     if total_live == 0:
         bot.send_message(chat_id, "Không tìm thấy token hợp lệ nào.")
-        del share_data[chat_id]  # Clean up
+        if chat_id in share_data: # Clean up
+            del share_data[chat_id]
         return
 
     bot.send_message(chat_id, f"Tìm thấy {total_live} token hợp lệ.")
@@ -478,7 +498,8 @@ def start_sharing(chat_id):
         bot.send_message(chat_id, f"Đạt giới hạn share là {total_share_limit} shares.")
     bot.send_message(chat_id, f"Tổng cộng {successful_shares} share thành công.")  # Final count
 
-    del share_data[chat_id]  # Clean up
+    if chat_id in share_data:  # More robust cleanup
+        del share_data[chat_id]
     global gome_token
     gome_token.clear()
     stop_sharing_flags[chat_id] = False  # Reset
@@ -514,10 +535,20 @@ def process_share(tach, id_share, stt, chat_id, user_id):
 
 
 
+
+def run_bot():
+    while True:
+        try:
+            logging.info("Bot is running...")
+            bot.infinity_polling()
+        except Exception as e:
+            logging.exception("Bot crashed. Restarting...")
+            time.sleep(15) # longer sleep before restart
+        except KeyboardInterrupt: # Handling stopping.
+            print("Bot stopped.")
+            sys.exit()
+
+
+
 if __name__ == "__main__":
-    try:
-        print("Bot is running...")
-        bot.infinity_polling()
-    except KeyboardInterrupt:
-        print("Bot stopped.")
-        sys.exit()
+    run_bot()
