@@ -20,12 +20,12 @@ bot = telebot.TeleBot(BOT_TOKEN)
 logging.basicConfig(level=logging.ERROR, format='%(asctime)s - %(levelname)s - %(message)s')
 
 nglusername = None
-spam_message = None  # Changed 'message' to 'spam_message' to avoid conflict
+spam_message = None
 Count = None
 delay = None
 spamming = False
 chat_id = None
-message_id_to_edit = None  # Store the message ID for updating
+message_id_to_edit = None
 
 def tao_device_id():
     characters = string.ascii_lowercase + string.digits
@@ -44,7 +44,8 @@ def lay_user_agent():
         return ua.random
     except FakeUserAgentError as e:
         logging.error(f"Lỗi khi lấy User Agent: {e}")
-        bot.send_message(chat_id, "Lỗi: Không thể lấy User Agent. Vui lòng kiểm tra kết nối mạng và cài đặt fake-useragent.")
+        if chat_id:
+            bot.send_message(chat_id, "Lỗi: Không thể lấy User Agent. Vui lòng kiểm tra kết nối mạng và cài đặt fake-useragent.")
         return None
 
 def tao_session_retry():
@@ -80,7 +81,7 @@ def random_headers():
     }
 
 
-def gui_ngl_tin_nhan(session, nglusername, message):  # No global here, 'message' is fine as a parameter
+def gui_ngl_tin_nhan(session, nglusername, message):
     data = {
         'username': f'{nglusername}',
         'question': f'{message}',
@@ -124,7 +125,7 @@ def spam_ngl(chat_id):
             print(status_message)
 
             try:
-                 bot.edit_message_text(chat_id=chat_id, message_id=message_id_to_edit, text=status_message) # Cập nhật tin nhắn
+                 bot.edit_message_text(chat_id=chat_id, message_id=message_id_to_edit, text=status_message)
             except telebot.apihelper.ApiTelegramException as e:
                 logging.error(f"Lỗi khi chỉnh sửa tin nhắn: {e}")
 
@@ -138,24 +139,24 @@ def spam_ngl(chat_id):
             print(status_message)
 
             try:
-                bot.edit_message_text(chat_id=chat_id, message_id=message_id_to_edit, text=status_message) # Cập nhật tin nhắn
+                bot.edit_message_text(chat_id=chat_id, message_id=message_id_to_edit, text=status_message)
             except telebot.apihelper.ApiTelegramException as e:
                 logging.error(f"Lỗi khi chỉnh sửa tin nhắn: {e}")
         if notsend == 4:
             status_message = "[!] Đang đổi thông tin..."
             print(status_message)
             try:
-                bot.edit_message_text(chat_id=chat_id, message_id=message_id_to_edit, text=status_message) # Cập nhật tin nhắn
+                bot.edit_message_text(chat_id=chat_id, message_id=message_id_to_edit, text=status_message)
             except telebot.apihelper.ApiTelegramException as e:
                 logging.error(f"Lỗi khi chỉnh sửa tin nhắn: {e}")
             notsend = 0
 
         time.sleep(delay + random.uniform(0,0.5))
 
-    if spamming:  # Only send completion message if spamming wasn't stopped manually
+    if spamming:
         bot.send_message(chat_id, "Hoàn thành spam!")
-    spamming = False # Reset spamming flag after completion or interruption
-    message_id_to_edit = None # Reset the message ID
+    spamming = False
+    message_id_to_edit = None
 
 
 # Telegram Bot Handlers
@@ -163,6 +164,11 @@ def spam_ngl(chat_id):
 def start_command(message):
     global chat_id
     chat_id = message.chat.id
+
+    if message.chat.type in ['group', 'supergroup']:
+        bot.reply_to(message, "Lệnh /ngl không được hỗ trợ trong nhóm. Vui lòng chat riêng với bot để sử dụng.")
+        return
+
     bot.send_message(chat_id, "Hãy nhập tên người dùng NGL:")
     bot.register_next_step_handler(message, get_username)
 
@@ -196,7 +202,7 @@ def get_delay(message):
     chat_id = message.chat.id
     try:
         delay = float(message.text)
-        if delay < 0:  # Prevent negative delays
+        if delay < 0:
             bot.send_message(chat_id, "Lỗi: Độ trễ không hợp lệ. Vui lòng nhập một số dương.")
             bot.register_next_step_handler(message, get_delay)
             return
@@ -215,14 +221,14 @@ def confirm_spam(message):
     global spamming, chat_id, nglusername, spam_message, Count, delay, message_id_to_edit
     chat_id = message.chat.id
     if message.text == 'Bắt đầu spam':
-        if not all([nglusername, spam_message, Count, delay is not None]): #Check delay is not None
+        if not all([nglusername, spam_message, Count, delay is not None]):
             bot.send_message(chat_id, "Lỗi: Vui lòng sử dụng lệnh /ngl theo đúng cú pháp để cung cấp đủ thông tin.")
             spamming = False
             return
 
         spamming = True
         initial_message = bot.send_message(chat_id, "Bắt đầu spam...", reply_markup=types.ReplyKeyboardRemove())
-        message_id_to_edit = initial_message.message_id  # Get the message ID
+        message_id_to_edit = initial_message.message_id
 
         spam_thread = threading.Thread(target=spam_ngl, args=(chat_id,))
         spam_thread.start()
