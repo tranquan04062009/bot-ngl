@@ -35,15 +35,10 @@ continue_sharing_flags = {}  # Tracks whether a user wants to continue sharing: 
 
 user_agents = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14.2; rv:122.0) Gecko/20100101 Firefox/122.0",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/120.0.2210.144",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; Trident/7.0; rv:11.0) like Gecko",
-    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Mobile/15E148 Safari/604.1",
-    "Mozilla/5.0 (iPad; CPU OS 17_2_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Mobile/15E148 Safari/604.1",
-    "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.259 Mobile Safari/537.36"
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Mobile/15E148 Safari/604.1"
 ]
 
 gome_token = []
@@ -89,7 +84,7 @@ def get_token(input_file):
     return gome_token
 
 
-async def share(tach, id_share, context: ContextTypes.DEFAULT_TYPE, user_id, successful_shares):
+async def share(tach, id_share, context: ContextTypes.DEFAULT_TYPE, user_id):  #Removed successful_shares parameter
     cookie = tach.split('|')[0]
     token = tach.split('|')[1]
     he = {
@@ -142,11 +137,6 @@ async def share_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat_id != GROUP_CHAT_ID:
         await context.bot.send_message(chat_id=chat_id, text="Xin lỗi, bot này chỉ hoạt động trong nhóm chat đã được chỉ định.")
         return
-
-    # **REMOVED** the permission check:
-    # if user_id not in ALLOWED_USER_IDS:
-    #    await context.bot.send_message(chat_id=chat_id, text="Xin lỗi, bạn không có quyền sử dụng lệnh này.")
-    #    return
 
     if user_id in active_share_threads:
         await context.bot.send_message(chat_id=chat_id,
@@ -201,11 +191,6 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=chat_id, text="Xin lỗi, bot này chỉ hoạt động trong nhóm chat đã được chỉ định.")
         return
 
-    # **REMOVED** the permission check:
-    #if user_id not in ALLOWED_USER_IDS:
-    #    await context.bot.send_message(chat_id=chat_id, text="Xin lỗi, bạn không có quyền sử dụng chức năng này.")
-    #    return
-
     if user_id in user_states and user_states[user_id] == "waiting_for_cookie_file":
         try:
             file_id = update.message.document.file_id
@@ -241,11 +226,6 @@ async def handle_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=chat_id, text="Xin lỗi, bot này chỉ hoạt động trong nhóm chat đã được chỉ định.")
         return
 
-    # **REMOVED** the permission check:
-    #if user_id not in ALLOWED_USER_IDS:
-    #    await context.bot.send_message(chat_id=chat_id, text="Xin lỗi, bạn không có quyền sử dụng chức năng này.")
-    #    return
-
     if user_id in user_states and user_states[user_id] == "waiting_for_id":
         id_share = update.message.text
         user_data[user_id]['id_share'] = id_share
@@ -262,14 +242,14 @@ async def handle_target_count(update: Update, context: ContextTypes.DEFAULT_TYPE
         await context.bot.send_message(chat_id=chat_id, text="Xin lỗi, bot này chỉ hoạt động trong nhóm chat đã được chỉ định.")
         return
 
-    # **REMOVED** the permission check:
-    #if user_id not in ALLOWED_USER_IDS:
-    #    await context.bot.send_message(chat_id=chat_id, text="Xin lỗi, bạn không có quyền sử dụng chức năng này.")
-    #    return
-
     if user_id in user_states and user_states[user_id] == "waiting_for_target_count":
         try:
             target_share_count = int(update.message.text)
+            if target_share_count <= 0:
+               await context.bot.send_message(chat_id=chat_id, text="Số lượng share phải lớn hơn 0. Vui lòng nhập lại.")
+               await ask_for_target_count(update, context)
+               return
+
             user_data[user_id]['target_share_count'] = target_share_count
             user_states[user_id] = "waiting_for_delay"
 
@@ -294,14 +274,14 @@ async def handle_delay(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=chat_id, text="Xin lỗi, bot này chỉ hoạt động trong nhóm chat đã được chỉ định.")
         return
 
-    # **REMOVED** the permission check:
-    #if user_id not in ALLOWED_USER_IDS:
-    #    await context.bot.send_message(chat_id=chat_id, text="Xin lỗi, bạn không có quyền sử dụng chức năng này.")
-    #    return
-
     if user_id in user_states and user_states[user_id] == "waiting_for_delay":
         try:
             delay = int(update.message.text)
+            if delay < 0:
+               await context.bot.send_message(chat_id=chat_id, text="Delay phải lớn hơn hoặc bằng 0. Vui lòng nhập lại.")
+               await ask_for_delay(update, context)
+               return
+
             user_data[user_id]['delay'] = delay
             user_states[user_id] = "ready_to_share"
 
@@ -333,11 +313,6 @@ async def start_sharing(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=chat_id, text="Xin lỗi, bot này chỉ hoạt động trong nhóm chat đã được chỉ định.")
         return
 
-    # **REMOVED** the permission check:
-    #if user_id not in ALLOWED_USER_IDS:
-    #    await context.bot.send_message(chat_id=chat_id, text="Xin lỗi, bạn không có quyền sử dụng chức năng này.")
-    #    return
-
     if user_id not in user_states or user_states[user_id] != "ready_to_share":
         await context.bot.send_message(chat_id=chat_id, text="Không thể bắt đầu share. Vui lòng chạy lại lệnh /share.")
         return
@@ -346,8 +321,6 @@ async def start_sharing(update: Update, context: ContextTypes.DEFAULT_TYPE):
     id_share = user_data[user_id]['id_share']
     delay = user_data[user_id]['delay']
     target_share_count = user_data[user_id]['target_share_count']
-    successful_shares = 0  # Reset the successful shares count for this run.
-    user_data[user_id]['successful_shares'] = 0 #Ensure the successful_shares value is reset
 
     all_tokens = get_token(input_file)
     total_live = len(all_tokens)
@@ -362,6 +335,8 @@ async def start_sharing(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     stt = 0
     shared_count = 0
+    successful_shares = 0  # Reset the successful share count
+    user_data[user_id]['successful_shares'] = 0
 
     global daily_share_count
     global share_count_lock
@@ -389,20 +364,19 @@ async def start_sharing(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not continue_sharing_flags.get(user_id, False):
                 break  # Double-check before starting the share
 
-            success = asyncio.run(share(tach, id_share, context, user_id,
-                                        successful_shares))  # Pass the successful shares to the share function
+            success = asyncio.run(share(tach, id_share, context, user_id))  #Removed successful_shares param
 
             if success:
                 with share_count_lock:
                     daily_share_count += 1
                 successful_shares += 1  # Increment the successful share count
-                user_data[user_id]['successful_shares'] = successful_shares # Update the value
+                user_data[user_id]['successful_shares'] = successful_shares #update data
+                print(f"Successful share count:{successful_shares}")
 
             shared_count += 1
             time.sleep(delay)  # Delay *inside* the thread function
 
         # Send final message.
-        successful_shares = user_data[user_id]['successful_shares'] # Get latest value for this
         if successful_shares >= target_share_count:
             message = f"@{username} Đã share thành công {successful_shares}/{target_share_count}."
         else:
@@ -426,19 +400,11 @@ async def handle_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=chat_id, text="Xin lỗi, bot này chỉ hoạt động trong nhóm chat đã được chỉ định.")
         return
 
-    # **REMOVED** the permission check:
-    #if user_id not in ALLOWED_USER_IDS:
-    #    await context.bot.send_message(chat_id=chat_id, text="Xin lỗi, bạn không có quyền sử dụng chức năng này.")
-    #    return
-
-    if user_id in user_states:
-        cleanup_user_data(user_id)
-        await context.bot.send_message(chat_id=chat_id, text="Tiến trình đã bị huỷ.",
-                                       reply_markup=ReplyKeyboardMarkup([[]], resize_keyboard=True,
-                                                                       one_time_keyboard=True))  # Remove keyboard
-    else:
-        await context.bot.send_message(chat_id=chat_id, text="Không có tiến trình nào đang chạy để hủy.")
-    await share_command(update, context)  # Always restart the process
+    cleanup_user_data(user_id)
+    await context.bot.send_message(chat_id=chat_id, text="Tiến trình đã bị huỷ.",
+                                   reply_markup=ReplyKeyboardMarkup([[]], resize_keyboard=True,
+                                                                   one_time_keyboard=True))  # Remove keyboard
+    return  # Do not restart the process after cancel
 
 
 async def handle_stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -449,11 +415,6 @@ async def handle_stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=chat_id, text="Xin lỗi, bot này chỉ hoạt động trong nhóm chat đã được chỉ định.")
         return
 
-    # **REMOVED** the permission check:
-    #if user_id not in ALLOWED_USER_IDS:
-    #    await context.bot.send_message(chat_id=chat_id, text="Xin lỗi, bạn không có quyền sử dụng chức năng này.")
-    #    return
-
     if user_id in active_share_threads:
         continue_sharing_flags[user_id] = False  # Set the flag to stop the thread
         await context.bot.send_message(chat_id=chat_id, text="Dừng chia sẻ...",
@@ -461,7 +422,9 @@ async def handle_stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                                                        one_time_keyboard=True))  # Remove Keyboard
     else:
         await context.bot.send_message(chat_id=chat_id, text="Không có tiến trình share nào đang chạy để dừng.")
-    await share_command(update, context)  # Always restart the process
+
+    cleanup_user_data(user_id) #cleanup
+    return #Don't restart after a "Stop"
 
 
 def cleanup_user_data(user_id):
