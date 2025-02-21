@@ -66,8 +66,9 @@ data_timestamps = {}
 # Tracking when to send the final report
 report_sent = {}
 
-# Constant for "Cancel" callback data
+# Constant for "Cancel" and "Stop Share" callback data
 CANCEL_CALLBACK_DATA = "cancel_input"
+STOP_SHARE_CALLBACK_DATA = "stop_share"
 
 
 def get_random_proxy():
@@ -326,30 +327,39 @@ def share_command(message):
 
     # Create a stop button
     markup = types.InlineKeyboardMarkup()
-    stop_button = types.InlineKeyboardButton("Dừng Share", callback_data="stop_share")
+    stop_button = types.InlineKeyboardButton("Dừng Share", callback_data=STOP_SHARE_CALLBACK_DATA)
     cancel_button = types.InlineKeyboardButton("Huỷ", callback_data=CANCEL_CALLBACK_DATA)  # Add cancel button
     markup.add(stop_button, cancel_button)  # Add both buttons in the same row
     bot.send_message(chat_id, "Vui lòng gửi file chứa cookie (cookies.txt).", reply_markup=markup)
+
+    # Store the user_id who started the /share command
+    share_data[user_key]['initiator_user_id'] = user_id
+
     bot.register_next_step_handler(message, process_cookie_file)
 
 
-@bot.callback_query_handler(func=lambda call: call.data == "stop_share")
+@bot.callback_query_handler(func=lambda call: call.data == STOP_SHARE_CALLBACK_DATA)
 def stop_share_callback(call):
     chat_id = call.message.chat.id
     user_id = call.from_user.id
     user_key = (chat_id, user_id)
-    stop_sharing_flags[user_key] = True  # Set the stop flag
-    bot.send_message(chat_id, "Đã nhận lệnh dừng share. Vui lòng chờ quá trình hoàn tất.")
-    global gome_token
-    gome_token.clear()
 
-    # close sessions (cleanup resources)
-    global token_sessions
-    for session in token_sessions.values():
-        session.close()
-    token_sessions = {}  # reset
+    # Only allow the admin or the user who initiated the /share command to stop the sharing
+    if user_id == ADMIN_USER_ID or (user_key in share_data and share_data[user_key].get('initiator_user_id') == user_id):
+        stop_sharing_flags[user_key] = True  # Set the stop flag
+        bot.send_message(chat_id, "Đã nhận lệnh dừng share. Vui lòng chờ quá trình hoàn tất.")
+        global gome_token
+        gome_token.clear()
 
-    cleanup_data(chat_id, user_id)  # Cleanup when stopped
+        # close sessions (cleanup resources)
+        global token_sessions
+        for session in token_sessions.values():
+            session.close()
+        token_sessions = {}  # reset
+
+        cleanup_data(chat_id, user_id)  # Cleanup when stopped
+    else:
+        bot.answer_callback_query(call.id, "Bạn không có quyền dừng quá trình này.")
 
 
 @bot.callback_query_handler(func=lambda call: call.data == CANCEL_CALLBACK_DATA)
@@ -358,8 +368,12 @@ def cancel_input_callback(call):
     user_id = call.from_user.id
     user_key = (chat_id, user_id)
 
-    bot.send_message(chat_id, "Đã huỷ. Bạn có thể bắt đầu lại bằng lệnh /share.")
-    cleanup_data(chat_id, user_id)
+    # Only allow the user who initiated the /share command to cancel the input process
+    if user_key in share_data and share_data[user_key].get('initiator_user_id') == user_id:
+        bot.send_message(chat_id, "Đã huỷ. Bạn có thể bắt đầu lại bằng lệnh /share.")
+        cleanup_data(chat_id, user_id)
+    else:
+        bot.answer_callback_query(call.id, "Bạn không có quyền huỷ quá trình này.")
 
 
 def process_cookie_file(message):
@@ -377,9 +391,14 @@ def process_cookie_file(message):
         if message.document is None:
             # Check for a "cancel" message
             if message.text and message.text.lower() == "cancel":
-                bot.send_message(chat_id, "Đã huỷ. Bạn có thể bắt đầu lại bằng lệnh /share.")
-                cleanup_data(chat_id, user_id)
-                return
+                # Check the initiator
+                if user_key in share_data and share_data[user_key].get('initiator_user_id') == user_id:
+                    bot.send_message(chat_id, "Đã huỷ. Bạn có thể bắt đầu lại bằng lệnh /share.")
+                    cleanup_data(chat_id, user_id)
+                    return
+                else:
+                    bot.send_message(chat_id, "Bạn không có quyền huỷ quá trình này.")
+                    return
 
             bot.reply_to(message, "Vui lòng gửi file chứa cookie (cookies.txt).")
             return
@@ -420,9 +439,14 @@ def process_id(message):
         if not id_share.isdigit():
             # Check for a "cancel" message
             if message.text and message.text.lower() == "cancel":
-                bot.send_message(chat_id, "Đã huỷ. Bạn có thể bắt đầu lại bằng lệnh /share.")
-                cleanup_data(chat_id, user_id)
-                return
+                if user_key in share_data and share_data[user_key].get('initiator_user_id') == user_id:
+                    bot.send_message(chat_id, "Đã huỷ. Bạn có thể bắt đầu lại bằng lệnh /share.")
+                    cleanup_data(chat_id, user_id)
+                    return
+                else:
+                    bot.send_message(chat_id, "Bạn không có quyền huỷ quá trình này.")
+                    return
+
             bot.reply_to(message, "ID không hợp lệ. Vui lòng nhập lại ID bài viết cần share.")
             bot.register_next_step_handler(message, process_id)
             return
@@ -458,9 +482,13 @@ def process_delay(message):
         except ValueError:
             # Check for a "cancel" message
             if message.text and message.text.lower() == "cancel":
-                bot.send_message(chat_id, "Đã huỷ. Bạn có thể bắt đầu lại bằng lệnh /share.")
-                cleanup_data(chat_id, user_id)
-                return
+                 if user_key in share_data and share_data[user_key].get('initiator_user_id') == user_id:
+                    bot.send_message(chat_id, "Đã huỷ. Bạn có thể bắt đầu lại bằng lệnh /share.")
+                    cleanup_data(chat_id, user_id)
+                    return
+                 else:
+                    bot.send_message(chat_id, "Bạn không có quyền huỷ quá trình này.")
+                    return
             bot.reply_to(message, "Delay không hợp lệ. Vui lòng nhập lại delay (giây) là một số dương.")
             bot.register_next_step_handler(message, process_delay)
             return
@@ -498,9 +526,13 @@ def process_total_shares(message):
         except ValueError:
             # Check for a "cancel" message
             if message.text and message.text.lower() == "cancel":
-                bot.send_message(chat_id, "Đã huỷ. Bạn có thể bắt đầu lại bằng lệnh /share.")
-                cleanup_data(chat_id, user_id)
-                return
+                 if user_key in share_data and share_data[user_key].get('initiator_user_id') == user_id:
+                    bot.send_message(chat_id, "Đã huỷ. Bạn có thể bắt đầu lại bằng lệnh /share.")
+                    cleanup_data(chat_id, user_id)
+                    return
+                 else:
+                    bot.send_message(chat_id, "Bạn không có quyền huỷ quá trình này.")
+                    return
             bot.reply_to(message,
                          "Số lượng share không hợp lệ. Vui lòng nhập lại tổng số lượng share (0 để không giới hạn) là một số dương.")
             bot.register_next_step_handler(message, process_total_shares)
@@ -555,7 +587,7 @@ def start_sharing(chat_id, user_id, username):
 
     # Send initial message with share success count and store its ID
     markup = types.InlineKeyboardMarkup()
-    stop_button = types.InlineKeyboardButton("Dừng Share", callback_data="stop_share")
+    stop_button = types.InlineKeyboardButton("Dừng Share", callback_data=STOP_SHARE_CALLBACK_DATA)
     markup.add(stop_button)
     bot.send_message(chat_id, "Bắt đầu share...", reply_markup=markup)  # Simplified starting message.  Removed the counter update
 
@@ -577,7 +609,7 @@ def start_sharing(chat_id, user_id, username):
             today = strftime("%Y-%m-%d")
             if user_id != ADMIN_USER_ID and user_share_counts[user_id][today] >= USER_SHARE_LIMIT_PER_DAY:
                 bot.send_message(chat_id,
-                                 f"Bạn đã đạt giới hạn {USER_SHARE_LIMIT_PER_DAY} share hôm nay. Vui lòng thử lại vào ngày mai.")
+                                 f"Bạn đã đạt giới hạn {USER_SHARE_LIMIT_PER_DAY} share hôm nay. Vui lòng thử lại vàongày mai.")
                 continue_sharing = False
                 break
 
@@ -630,8 +662,7 @@ def process_share(tach, id_share, stt, chat_id, user_id, username):  # Removed m
     if stop_sharing_flags.get(user_key, False):
         return  # Stop immediately
 
-    success = share_thread_telegram(tach, id_share, stt, chat_id, user_id)  # Removed message
-    
+    success = share_thread_telegram(tach, id_share, stt, chat_id, user_id)  # Removed message_id argument
     if not success:
         # share() function handles stopping when share fails
         return
