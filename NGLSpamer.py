@@ -160,7 +160,7 @@ def spam_ngl(chat_id):
 
 
 # Telegram Bot Handlers
-@bot.message_handler(commands=['start'])
+@bot.message_handler(commands=['startngl'])
 def start_command(message):
     global chat_id
     chat_id = message.chat.id
@@ -261,7 +261,7 @@ def default_command(message):
 
     # Only send the "invalid command" message in private chats
     if message.chat.type == 'private':
-        bot.reply_to(message, "Lệnh không hợp lệ. Vui lòng sử dụng /ngl để bắt đầu hoặc /stop để dừng. Gõ /start để biết thêm thông tin.")
+        bot.reply_to(message, "Lệnh không hợp lệ. Vui lòng sử dụng /ngl để bắt đầu hoặc /stop để dừng. Gõ /startngl để biết thêm thông tin.")
 
 print("Bot NGL Spammer Telegram đã chạy")
 bot.infinity_polling()
